@@ -14,7 +14,11 @@ from xml.etree import ElementTree
 
 import pydyf
 from PIL import Image, ImageFile, ImageOps
-from pillow_heif import register_heif_opener
+#from pillow_heif import register_heif_opener # pip install pillow-heif
+from pi_heif import register_heif_opener # pip install pi-heif
+import magic # python3-magic - for the occasional odd embedded file type
+import mimetypes
+import os
 
 from . import DEFAULT_OPTIONS
 from .layout.percent import percentage
@@ -273,6 +277,9 @@ class SVGImage:
             ratio = width / height
         else:
             ratio = 1
+        # override - cheap hack but it works for the SVG icons I am dealing with
+        width = 32
+        height = 32
         return width, height, ratio
 
     def draw(self, stream, concrete_width, concrete_height, image_rendering):
@@ -298,8 +305,30 @@ def get_image_from_uri(cache, url_fetcher, options, url, forced_mime_type=None,
                 string = result['string']
             else:
                 string = result['file_obj'].read()
-            mime_type = forced_mime_type or result['mime_type']
-
+            try:
+                filemime = magic.from_buffer(string, mime=True)
+                fileext = mimetypes.guess_extension(filemime).lstrip(".").lower()
+            except:
+                # try to figure out the problematic ones
+                if string[0:6] == b'#!AMR\n':
+                    # fix file type by header
+                    filemime = 'audio/amr'
+                    fileext = 'amr'
+                else:
+                    filemime = "ERR"
+                    fileext = "default"
+                    print("Header:", string[0:100])
+            print("Inline:", filemime, fileext, len(string), "bytes")
+            # if filemime is not an image, replace it with an icon
+            if not filemime.startswith("image/"):
+                abs_path = os.path.dirname(__file__)
+                sub_path = "icons"
+                iconpath = os.path.join(abs_path, sub_path)
+                with open(iconpath + "/" + fileext + ".svg") as i:
+                    string = i.read()
+                    mime_type = 'image/svg+xml'
+            else:
+                mime_type = forced_mime_type or result['mime_type']
         image = None
         svg_exceptions = []
         # Try to rely on given mimetype for SVG
