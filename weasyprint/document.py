@@ -17,7 +17,7 @@ from .images import get_image_from_uri as original_get_image_from_uri
 from .layout import LayoutContext, layout_document
 from .logger import PROGRESS_LOGGER
 from .matrix import Matrix
-from .pdf import generate_pdf
+from .pdf import VARIANTS, generate_pdf
 from .text.fonts import FontConfiguration
 
 
@@ -28,6 +28,7 @@ class Page:
     instantiated directly.
 
     """
+
     def __init__(self, page_box):
         #: The page width, including margins, in CSS pixels.
         self.width = page_box.margin_width()
@@ -67,17 +68,18 @@ class Page:
         #: ``(x, y)`` point in CSS pixels from the top-left of the page.
         self.anchors = {}
 
-        #: The :obj:`list` of ``(element, attributes, rectangle)`` :obj:`tuples
-        #: <tuple>`. A ``rectangle`` is ``(x, y, width, height)``, in CSS
+        #: The :obj:`dict` mapping form elements to a list
+        #: of ``(element, attributes, rectangle)`` :obj:`tuples <tuple>`.
+        #: A ``rectangle`` is ``(x, y, width, height)``, in CSS
         #: pixels from the top-left of the page. ``atributes`` is a
         #: :obj:`dict` of HTML tag attributes and values.
-        self.inputs = []
+        #: The key ``None`` will contain inputs that are not part of a form.
+        self.forms = {None: []}
 
-        gather_anchors(
-            page_box, self.anchors, self.links, self.bookmarks, self.inputs)
+        gather_anchors(page_box, self.anchors, self.links, self.bookmarks, self.forms)
         self._page_box = page_box
 
-    def paint(self, stream, left_x=0, top_y=0, scale=1, clip=False):
+    def paint(self, stream, scale=1):
         """Paint the page into the PDF file.
 
         :type stream: ``document.Stream``
@@ -95,11 +97,7 @@ class Page:
 
         """
         with stacked(stream):
-            # Make (0, 0) the top-left corner, and make user units CSS pixels:
-            stream.transform(a=scale, d=scale, e=left_x, f=top_y)
-            if clip:
-                stream.rectangle(0, 0, self.width, self.height)
-                stream.clip()
+            stream.transform(a=scale, d=scale)
             draw_page(self._page_box, stream)
 
 
@@ -109,6 +107,7 @@ class DocumentMetadata:
     New attributes may be added in future versions of WeasyPrint.
 
     """
+
     def __init__(self, title=None, authors=None, description=None,
                  keywords=None, generator=None, created=None, modified=None,
                  attachments=None, lang=None, custom=None):
@@ -147,8 +146,7 @@ class DocumentMetadata:
         #: Extracted from the ``<meta name=dcterms.modified>`` element in HTML
         #: and written to the ``/ModDate`` info field in PDF.
         self.modified = modified
-        #: File attachments, as a list of tuples of URL and a description or
-        #: :obj:`None`. (Defaults to the empty list.)
+        #: A list of :class:`attachments <weasyprint.Attachment>`, empty by default.
         #: Extracted from the ``<link rel=attachment>`` elements in HTML
         #: and written to the ``/EmbeddedFiles`` dictionary in PDF.
         self.attachments = attachments or []
@@ -167,6 +165,7 @@ class DiskCache:
     (i.e. RasterImage instances) are still stored in memory.
 
     """
+
     def __init__(self, folder):
         self._path = Path(folder)
         self._path.mkdir(parents=True, exist_ok=True)
@@ -174,7 +173,8 @@ class DiskCache:
         self._disk_paths = set()
 
     def _path_from_key(self, key):
-        return self._path / md5(key.encode()).hexdigest()
+        digest = md5(key.encode(), usedforsecurity=False).hexdigest()
+        return self._path / digest
 
     def __getitem__(self, key):
         if key in self._memory_cache:
@@ -218,10 +218,6 @@ class Document:
 
     @classmethod
     def _build_layout_context(cls, html, font_config, counter_style, options):
-        if font_config is None:
-            font_config = FontConfiguration()
-        if counter_style is None:
-            counter_style = CounterStyle()
         target_collector = TargetCollector()
         page_rules = []
         user_stylesheets = []
@@ -396,21 +392,31 @@ class Document:
         new_options = DEFAULT_OPTIONS.copy()
         new_options.update(options)
         options = new_options
-        pdf = generate_pdf(self, target, zoom, **options)
 
-        identifier = options['pdf_identifier']
-        compress = not options['uncompressed_pdf']
+        # Set default PDF version for PDF variants.
+        if variant := options['pdf_variant']:
+            _, properties = VARIANTS[variant]
+            if 'version' in properties and not options['pdf_version']:
+                options['pdf_version'] = properties['version']
+            if 'identifier' in properties and not options['pdf_identifier']:
+                options['pdf_identifier'] = properties['identifier']
+
+        pdf = generate_pdf(self, target, zoom, **options)
 
         if finisher:
             finisher(self, pdf)
 
+        identifier = options['pdf_identifier']
+        compress = not options['uncompressed_pdf']
+        version = options['pdf_version']
+
         if target is None:
             output = io.BytesIO()
-            pdf.write(output, pdf.version, identifier, compress)
+            pdf.write(output, version, identifier, compress)
             return output.getvalue()
 
         if hasattr(target, 'write'):
-            pdf.write(target, pdf.version, identifier, compress)
+            pdf.write(target, version, identifier, compress)
         else:
             with open(target, 'wb') as fd:
-                pdf.write(fd, pdf.version, identifier, compress)
+                pdf.write(fd, version, identifier, compress)

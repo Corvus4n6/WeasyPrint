@@ -5,17 +5,20 @@ from math import inf
 import tinycss2
 
 from ...logger import LOGGER
-from ..utils import (
+from . import properties
+
+from ..utils import (  # isort:skip
     InvalidValues, comma_separated_list, get_custom_ident, get_keyword,
     get_single_keyword, get_url, remove_whitespace, single_keyword,
     single_token, split_on_comma)
-from . import properties
 
 DESCRIPTORS = {
     'font-face': {},
     'counter-style': {},
 }
-
+NOT_PRINT_MEDIA = (
+    'font-display',
+)
 
 class NoneFakeToken:
     type = 'ident'
@@ -40,8 +43,9 @@ def preprocess_descriptors(rule, base_url, descriptors):
             continue
         tokens = remove_whitespace(descriptor.value)
         try:
-            # Use list() to consume generators now and catch any error.
-            if descriptor.name not in DESCRIPTORS[rule]:
+            if descriptor.name in NOT_PRINT_MEDIA:
+                continue
+            elif descriptor.name not in DESCRIPTORS[rule]:
                 raise InvalidValues('descriptor not supported')
 
             function = DESCRIPTORS[rule][descriptor.name]
@@ -198,7 +202,7 @@ def font_variant(tokens):
     for name, sub_tokens in expand_font_variant(tokens):
         try:
             values.append(properties.validate_non_shorthand(
-                f'font-variant{name}', sub_tokens, required=True))
+                sub_tokens, f'font-variant{name}', required=True))
         except InvalidValues:
             return None
     return values

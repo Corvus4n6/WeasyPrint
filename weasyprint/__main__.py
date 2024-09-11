@@ -5,7 +5,6 @@ import logging
 import platform
 import sys
 from functools import partial
-from warnings import warn
 
 import pydyf
 
@@ -64,8 +63,7 @@ class Parser(argparse.ArgumentParser):
         return ''.join(data)
 
 
-PARSER = Parser(
-    prog='weasyprint', description='Render web pages to PDF.')
+PARSER = Parser(prog='weasyprint', description='Render web pages to PDF.')
 PARSER.add_argument(
     'input', help='URL or filename of the HTML input, or - for stdin')
 PARSER.add_argument(
@@ -101,6 +99,9 @@ PARSER.add_argument(
     '-p', '--presentational-hints', action='store_true',
     help='follow HTML presentational hints')
 PARSER.add_argument(
+    '--srgb', action='store_true',
+    help='include sRGB color profile')
+PARSER.add_argument(
     '--optimize-images', action='store_true',
     help='optimize size of embedded images with no quality loss')
 PARSER.add_argument(
@@ -134,16 +135,12 @@ PARSER.add_argument(
     '-i', '--info', action=PrintInfo, nargs=0,
     help='print system information and exit')
 PARSER.add_argument(
-    '-O', '--optimize-size', action='append',
-    help='deprecated, use other options instead',
-    choices=('images', 'fonts', 'hinting', 'pdf', 'all', 'none'))
-PARSER.add_argument(
     '-t', '--timeout', type=int,
     help='Set timeout in seconds for HTTP requests')
 PARSER.set_defaults(**DEFAULT_OPTIONS)
 
 
-def main(argv=None, stdout=None, stdin=None, HTML=HTML):
+def main(argv=None, stdout=None, stdin=None, HTML=HTML):  # noqa: N803
     """The ``weasyprint`` program takes at least two arguments:
 
     .. code-block:: sh
@@ -167,38 +164,12 @@ def main(argv=None, stdout=None, stdin=None, HTML=HTML):
     else:
         output = args.output
 
-    # TODO: to be removed when --optimize-size is removed
-    optimize_size = {'fonts', 'hinting', 'pdf'}
-    if args.optimize_size is not None:
-        warn(
-            'The --optimize-size option is now deprecated '
-            'and will be removed in next version. '
-            'Please use the other options available in --help instead.',
-            category=FutureWarning)
-        for arg in args.optimize_size:
-            if arg == 'none':
-                optimize_size.clear()
-            elif arg == 'all':
-                optimize_size |= {'images', 'fonts', 'hinting', 'pdf'}
-            else:
-                optimize_size.add(arg)
-    del args.optimize_size
-
     url_fetcher = default_url_fetcher
     if args.timeout is not None:
         url_fetcher = partial(default_url_fetcher, timeout=args.timeout)
 
-    options = vars(args)
-
-    # TODO: to be removed when --optimize-size is removed
-    if 'images' in optimize_size:
-        options['optimize_images'] = True
-    if 'fonts' not in optimize_size:
-        options['full_fonts'] = True
-    if 'hinting' not in optimize_size:
-        options['hinting'] = True
-    if 'pdf' not in optimize_size:
-        options['uncompressed_pdf'] = True
+    options = {
+        key: value for key, value in vars(args).items() if key in DEFAULT_OPTIONS}
 
     # Default to logging to stderr.
     if args.debug:
@@ -207,7 +178,14 @@ def main(argv=None, stdout=None, stdin=None, HTML=HTML):
         LOGGER.setLevel(logging.INFO)
     if not args.quiet:
         handler = logging.StreamHandler()
-        handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
+        if args.debug:
+            # Add extra information when debug logging
+            handler.setFormatter(
+                logging.Formatter(
+                    '%(levelname)s: %(filename)s:%(lineno)d '
+                    '(%(funcName)s): %(message)s'))
+        else:
+            handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
         LOGGER.addHandler(handler)
 
     html = HTML(

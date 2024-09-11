@@ -15,7 +15,6 @@ def test_inline_footnote(assert_pixels):
         RRRRRRRR_
     ''', '''
     <style>
-        @font-face {src: url(weasyprint.otf); font-family: weasyprint}
         @page {
             size: 9px 7px;
         }
@@ -44,7 +43,6 @@ def test_block_footnote(assert_pixels):
         RRRRRRRR_
     ''', '''
     <style>
-        @font-face {src: url(weasyprint.otf); font-family: weasyprint}
         @page {
             size: 9px 7px;
         }
@@ -73,7 +71,6 @@ def test_long_footnote(assert_pixels):
         RR_______
     ''', '''
     <style>
-        @font-face {src: url(weasyprint.otf); font-family: weasyprint}
         @page {
             size: 9px 7px;
         }
@@ -102,7 +99,6 @@ def test_footnote_margin(assert_pixels):
         _________
     ''', '''
     <style>
-        @font-face {src: url(weasyprint.otf); font-family: weasyprint}
         @page {
             size: 9px 7px;
 
@@ -124,6 +120,56 @@ def test_footnote_margin(assert_pixels):
 
 
 @assert_no_logs
+def test_footnote_multiple_margin(assert_pixels):
+    assert_pixels('''
+        RRRR___
+        RRRR___
+        RRRR___
+        RRRR___
+        RRRR___
+        RRRR___
+        RRRRRR_
+        RRRRRR_
+        _______
+        _______
+
+        RRRR___
+        RRRR___
+        _______
+        _______
+        _______
+        _______
+        RRRRRR_
+        RRRRRR_
+        RRRRRR_
+        RRRRRR_
+    ''', '''
+    <style>
+        @page {
+            size: 7px 10px;
+
+            @footnote {
+                margin-top: 1px;
+            }
+        }
+        div {
+            color: red;
+            font-family: weasyprint;
+            font-size: 2px;
+            line-height: 1;
+        }
+        span {
+            float: footnote;
+        }
+    </style>
+    <div>ab</div>
+    <div>ab</div>
+    <div>ab</div>
+    <div>a<span>d</span><span>e</span></div>
+    <div>ab</div>''')
+
+
+@assert_no_logs
 def test_footnote_with_absolute(assert_pixels):
     assert_pixels('''
         _RRRR____
@@ -135,7 +181,6 @@ def test_footnote_with_absolute(assert_pixels):
         BB_______
     ''', '''
     <style>
-        @font-face {src: url(weasyprint.otf); font-family: weasyprint}
         @page {
             size: 9px 7px;
             margin: 0 1px 2px;
@@ -176,7 +221,6 @@ def test_footnote_max_height_1(assert_pixels):
         _BBBBBB__
     ''', '''
     <style>
-        @font-face {src: url(weasyprint.otf); font-family: weasyprint}
         @page {
             size: 9px 6px;
 
@@ -217,7 +261,6 @@ def test_footnote_max_height_2(assert_pixels):
         _BBBBBB__
     ''', '''
     <style>
-        @font-face {src: url(weasyprint.otf); font-family: weasyprint}
         @page {
             size: 9px 6px;
 
@@ -265,7 +308,6 @@ def test_footnote_max_height_3(assert_pixels):
         _BBBBBB__
     ''', '''
     <style>
-        @font-face {src: url(weasyprint.otf); font-family: weasyprint}
         @page {
             size: 9px 6px;
 
@@ -305,7 +347,6 @@ def test_footnote_max_height_4(assert_pixels):
         _BBBBBB__
     ''', '''
     <style>
-        @font-face {src: url(weasyprint.otf); font-family: weasyprint}
         @page {
             size: 9px 6px;
 
@@ -347,7 +388,6 @@ def test_footnote_max_height_5(assert_pixels):
         _BBBBBB_____
     ''', '''
     <style>
-        @font-face {src: url(weasyprint.otf); font-family: weasyprint}
         @page {
             size: 12px 6px;
 

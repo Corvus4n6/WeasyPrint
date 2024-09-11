@@ -1,9 +1,10 @@
 """Test how images are drawn in SVG."""
 
 import pytest
+
 from weasyprint.urls import path2url
 
-from ...testing_utils import assert_no_logs, resource_filename
+from ...testing_utils import assert_no_logs, resource_path
 
 
 @assert_no_logs
@@ -163,7 +164,7 @@ def test_image_svg_align_slice_x(assert_pixels):
     ''', '''
       <style>
         @page { size: 8px 8px }
-        svg { display: block }
+        svg { display: block; overflow: hidden }
       </style>
       <svg width="8px" height="4px" viewBox="0 0 4 4"
            preserveAspectRatio="xMinYMin slice"
@@ -189,7 +190,7 @@ def test_image_svg_align_slice_y(assert_pixels):
     ''', '''
       <style>
         @page { size: 8px 8px }
-        svg { display: block }
+        svg { display: block; overflow: hidden }
       </style>
       <svg width="4px" height="8px" viewBox="0 0 4 4"
            preserveAspectRatio="xMinYMin slice"
@@ -254,7 +255,7 @@ def test_image_image(assert_pixels):
       <svg width="4px" height="4px" xmlns="http://www.w3.org/2000/svg">
         <image xlink:href="%s" />
       </svg>
-    ''' % path2url(resource_filename('pattern.png')))
+    ''' % path2url(resource_path('pattern.png')))
 
 
 def test_image_image_wrong(assert_pixels):

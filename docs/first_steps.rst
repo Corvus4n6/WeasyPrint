@@ -9,12 +9,12 @@ Installation
 
 WeasyPrint |version| depends on:
 
-* Python_ ≥ 3.7.0
+* Python_ ≥ 3.9.0
 * Pango_ ≥ 1.44.0
-* pydyf_ ≥ 0.6.0
+* pydyf_ ≥ 0.10.0
 * CFFI_ ≥ 0.6
 * html5lib_ ≥ 1.1
-* tinycss2_ ≥ 1.0.0
+* tinycss2_ ≥ 1.3.0
 * cssselect2_ ≥ 0.1
 * Pyphen_ ≥ 0.9.1
 * Pillow_ ≥ 9.1.0
@@ -48,9 +48,9 @@ Ubuntu_, Fedora_, Archlinux_, Gentoo_…
 .. _Gentoo: https://packages.gentoo.org/packages/dev-python/weasyprint
 
 If WeasyPrint is not available on your distribution, or if you want to use a
-more recent version of WeasyPrint, you have to be sure that Python_ (at least
-version 3.7.0) and Pango_ (at least version 1.44.0) are installed on your
-system. You can verify this by launching::
+more recent version of WeasyPrint, you have to be sure that Python_ and Pango_
+are installed on your system, and that they are recent enough. You can verify
+this by launching::
 
   python3 --version
   pango-view --version
@@ -70,30 +70,30 @@ in a `virtual environment`_ using `pip`_::
 .. _pip: https://pip.pypa.io/
 
 
-Alpine ≥ 3.12
+Alpine ≥ 3.17
 +++++++++++++
 
-To install WeasyPrint without a virtualenv, you need the following packages::
+To install WeasyPrint using your distribution’s package::
 
-  apk add py3-pip py3-pillow py3-cffi py3-brotli gcc musl-dev python3-dev pango
+  apk add weasyprint
 
 To install WeasyPrint inside a virtualenv using wheels (if possible), you need
 the following packages::
 
-  apk add py3-pip gcc musl-dev python3-dev pango zlib-dev jpeg-dev openjpeg-dev g++ libffi-dev
+  apk add py3-pip gcc musl-dev python3-dev pango zlib-dev jpeg-dev openjpeg-dev g++ libffi-dev harfbuzz-subset
 
 To install WeasyPrint inside a virtualenv without using wheels, you need the
 following packages::
 
-  apk add py3-pip gcc musl-dev python3-dev pango zlib-dev jpeg-dev openjpeg-dev g++ libffi-dev
+  apk add py3-pip gcc musl-dev python3-dev pango zlib-dev jpeg-dev openjpeg-dev g++ libffi-dev harfbuzz-subset
 
 
 Archlinux
 +++++++++
 
-To install WeasyPrint without a virtualenv, you need the following packages::
+To install WeasyPrint using your distribution’s package::
 
-  pacman -S python-pip pango python-cffi python-pillow python-brotli python-zopfli
+  pacman -S python-weasyprint
 
 To install WeasyPrint inside a virtualenv using wheels (if possible), you need
 the following packages::
@@ -109,55 +109,55 @@ following packages::
 Debian ≥ 11
 +++++++++++
 
-To install WeasyPrint without a virtualenv, you need the following packages::
+To install WeasyPrint using your distribution’s package::
 
-  apt install python3-pip python3-cffi python3-brotli libpango-1.0-0 libpangoft2-1.0-0
+  apt install weasyprint
 
 To install WeasyPrint inside a virtualenv using wheels (if possible), you need
 the following packages::
 
-  apt install python3-pip libpango-1.0-0 libpangoft2-1.0-0
+  apt install python3-pip libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0
 
 To install WeasyPrint inside a virtualenv without using wheels, you need the
 following packages::
 
-  apt install python3-pip libpango-1.0-0 libpangoft2-1.0-0 libjpeg-dev libopenjp2-7-dev libffi-dev
+  apt install python3-pip libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 libjpeg-dev libopenjp2-7-dev libffi-dev
 
 
-Fedora ≥ 34
+Fedora ≥ 39
 +++++++++++
 
-To install WeasyPrint without a virtualenv, you need the following packages::
+To install WeasyPrint using your distribution’s package::
 
-  yum install python-pip python-pillow python-cffi python3-brotli pango
+  dnf install weasyprint
 
 To install WeasyPrint inside a virtualenv using wheels (if possible), you need
 the following packages::
 
-  yum install python-pip pango
+  dnf install python-pip pango
 
 To install WeasyPrint inside a virtualenv without using wheels, you need the
 following packages::
 
-  yum install python-pip pango gcc python3-devel gcc-c++ zlib-devel libjpeg-devel openjpeg2-devel libffi-devel
+  dnf install python3-pip pango gcc python3-devel gcc-c++ zlib-devel libjpeg-devel openjpeg2-devel libffi-devel
 
 
 Ubuntu ≥ 20.04
 ++++++++++++++
 
-To install WeasyPrint without a virtualenv, you need the following packages::
+To install WeasyPrint using your distribution’s package::
 
-  apt install python3-pip python3-cffi python3-brotli libpango-1.0-0 libharfbuzz0b libpangoft2-1.0-0
+  apt install weasyprint
 
 To install WeasyPrint inside a virtualenv using wheels (if possible), you need
 the following packages::
 
-  apt install python3-pip libpango-1.0-0 libharfbuzz0b libpangoft2-1.0-0
+  apt install python3-pip libpango-1.0-0 libharfbuzz0b libpangoft2-1.0-0 libharfbuzz-subset0
 
 To install WeasyPrint inside a virtualenv without using wheels, you need the
 following packages::
 
-  apt install python3-pip libpango-1.0-0 libharfbuzz0b libpangoft2-1.0-0 libffi-dev libjpeg-dev libopenjp2-7-dev
+  apt install python3-pip libpango-1.0-0 libharfbuzz0b libpangoft2-1.0-0 libharfbuzz-subset0 libffi-dev libjpeg-dev libopenjp2-7-dev
 
 
 macOS
@@ -173,30 +173,35 @@ The easiest way to install WeasyPrint on macOS is to use Homebrew_::
 Windows
 ~~~~~~~
 
-Installing WeasyPrint on Windows requires to follow a few steps that may not be
-easy. Please read this chapter carefully.
+To use WeasyPrint on Windows, the easiest way is to use the `executable`_ of
+the latest release.
 
-Only Windows 11 64-bit is supported. You can find this information in the
-Control Panel → System and Security → System.
+If you want to use WeasyPrint as a Python library, you’ll have to follow a few
+extra steps. Please read this chapter carefully.
 
 The first step is to install the latest version of Python from the `Microsoft
 Store`_.
 
-When Python is installed, you have to install GTK. Download the latest `GTK3
-installer`_ and launch it. If you don’t know what some options mean, you can
-safely keep the default options selected.
+When Python is installed, you have to install Pango and its dependencies. The
+easiest way to install these libraries is to use MSYS2. Here are the steps you
+have to follow:
 
-When everything is OK, you can launch a command prompt by clicking on the Start
-menu, typing "cmd" and clicking the "Command Prompt" icon. You can then install
-WeasyPrint in a `virtual environment`_ using `pip`_::
+- Install `MSYS2`_ keeping the default options.
+- After installation, in MSYS2’s shell, execute ``pacman -S mingw-w64-x86_64-pango``.
+- Close MSYS2’s shell.
+
+You can then launch a Windows command prompt by clicking on the Start menu,
+typing ``cmd`` and clicking the "Command Prompt" icon. Install WeasyPrint in a
+`virtual environment`_ using `pip`_::
 
   python3 -m venv venv
   venv\Scripts\activate.bat
   python3 -m pip install weasyprint
   python3 -m weasyprint --info
 
+.. _executable: https://github.com/Kozea/WeasyPrint/releases
 .. _Microsoft Store: https://apps.microsoft.com/store/search/python
-.. _GTK3 installer: https://github.com/tschoonj/GTK-for-Windows-Runtime-Environment-Installer/releases
+.. _MSYS2: https://www.msys2.org/#installation
 
 
 Other Solutions
@@ -259,28 +264,30 @@ Troubleshooting
 ~~~~~~~~~~~~~~~
 
 Most of the installation problems have already been met, and some `issues on
-GitHub`_ could help you to solve them.
+GitHub`_ could help you to solve them. If the solutions here don’t solve your
+problem, please open a new issue (and don’t add comments to closed issues).
+
+.. _issues on GitHub: https://github.com/Kozea/WeasyPrint/issues
 
 Missing Library
 +++++++++++++++
 
-On Windows, most of the problems come from unreachable libraries. If you get an
-error like ``cannot load library 'xxx': error xxx``, it means that WeasyPrint
-can’t find this library.
+On Windows or macOS, most of the problems come from unreachable libraries. If
+you get an error like ``cannot load library 'xxx': error xxx``, it means that
+WeasyPrint can’t find this library.
 
-You can set the ``WEASYPRINT_DLL_DIRECTORIES`` environment variable to list the
-folders where the libraries can be found. For example, in ``cmd.exe``:
+On Windows, you can set the ``WEASYPRINT_DLL_DIRECTORIES`` environment variable
+to list the folders where the DLL files can be found. For example, in
+``cmd.exe``::
 
-.. code-block:: doscon
+  set WEASYPRINT_DLL_DIRECTORIES=C:\msys64\mingw64\bin
 
-    > set WEASYPRINT_DLL_DIRECTORIES=C:\GTK3\bin;D:\GTK3\bin
+On macOS, you can set the ``DYLD_FALLBACK_LIBRARY_PATH`` environment variable::
 
-You can find more about this issue in `#589`_, `#721`_ or `#1240`_.
+  export DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib:$DYLD_FALLBACK_LIBRARY_PATH
 
-.. _issues on GitHub: https://github.com/Kozea/WeasyPrint/issues
-.. _#589: https://github.com/Kozea/WeasyPrint/issues/589
-.. _#721: https://github.com/Kozea/WeasyPrint/issues/721
-.. _#1240: https://github.com/Kozea/WeasyPrint/issues/1240
+Of course, check that the folders you set actually contain the ``.dll`` (on
+Windows) or ``.dylib`` (on macOS) files WeasyPrint requires.
 
 Missing Fonts
 +++++++++++++
@@ -472,8 +479,8 @@ to the default fetcher:
     def my_fetcher(url):
         if url.startswith('graph:'):
             graph_data = map(float, url[6:].split(','))
-            return dict(string=generate_graph(graph_data),
-                        mime_type='image/png')
+            string = generate_graph(graph_data)
+            return {'string': string, 'mime_type': 'image/png'}
         return default_url_fetcher(url)
 
     source = '<img src="graph:42,10.3,87">'
@@ -509,7 +516,7 @@ Image Cache and Optimization
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 WeasyPrint provides many options to deal with images: ``optimize_images``,
-``jpeg_quality``, ``dpi`` and ``image_cache``.
+``jpeg_quality``, ``dpi`` and ``cache``.
 
 ``optimize_images`` can enable size optimization for images. When enabled, the
 generated PDF will include smaller images with no quality penalty, but the
@@ -533,7 +540,7 @@ generated PDF.
     HTML('https://weasyprint.org/').write_pdf(
         'weasyprint.pdf', optimize_images=True, jpeg_quality=60, dpi=150)
 
-``image_cache`` gives the possibility to use a cache for images, avoiding to
+``cache`` gives the possibility to use a cache for images, avoiding to
 download, parse and optimize them each time they are used.
 
 By default, the cache is used document by document, but you can share it
@@ -545,12 +552,12 @@ time when you render a lot of documents that use the same images.
     cache = {}
     for i in range(10):
         HTML(f'https://weasyprint.org/').write_pdf(
-            f'example-{i}.pdf', image_cache=cache)
+            f'example-{i}.pdf', cache=cache)
 
 It’s also possible to cache images on disk instead of keeping them in memory.
 The ``--cache-folder`` CLI option can be used to define the folder used to
 store temporary images. You can also provide this folder path as a string for
-``image_cache``.
+``cache``.
 
 
 Logging
@@ -581,12 +588,18 @@ See the documentation of the :mod:`logging` module for details.
 Security
 --------
 
+*This section has been added thanks to the very useful reports and advice from
+Raz Becker.*
+
 When used with untrusted HTML or untrusted CSS, WeasyPrint can meet security
 problems. You will need extra configuration in your Python application to avoid
 high memory use, endless renderings or local files leaks.
 
-*This section has been added thanks to the very useful reports and advice from
-Raz Becker.*
+As for any service dealing with untrusted data, you should at least follow
+basic security rules with WeasyPrint: don’t launch the service as root, launch
+it as a user with limited access to filesystem, network and memory. Using a
+container can also be a simple way to limit the possibilities given to an
+attacker in case of security breach.
 
 Long Renderings
 ~~~~~~~~~~~~~~~

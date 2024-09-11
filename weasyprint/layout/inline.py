@@ -10,11 +10,11 @@ from ..text.line_break import can_break_text, create_layout, split_first_line
 from .absolute import AbsolutePlaceholder, absolute_layout
 from .flex import flex_layout
 from .float import avoid_collisions, float_layout
+from .grid import grid_layout
 from .leader import handle_leader
 from .min_max import handle_min_max_width
 from .percent import resolve_one_percentage, resolve_percentages
-from .preferred import (
-    inline_min_content_width, shrink_to_fit, trailing_whitespace_size)
+from .preferred import inline_min_content_width, shrink_to_fit, trailing_whitespace_size
 from .replaced import inline_replaced_box_layout
 from .table import find_in_flow_baseline, table_wrapper_width
 
@@ -294,8 +294,7 @@ def first_letter_to_box(box, skip_stack, first_letter_style):
                 letter_box = boxes.InlineBox(
                     f'{box.element_tag}::first-letter', letter_style,
                     box.element, [child])
-                box.children = (
-                    (letter_box,) + tuple(box.children[1:]))
+                box.children = ((letter_box, *box.children[1:]))
             elif child.text:
                 character_found = False
                 if skip_stack:
@@ -325,7 +324,7 @@ def first_letter_to_box(box, skip_stack, first_letter_style):
                             f'{box.element_tag}::first-letter', letter_style,
                             box.element, first_letter)
                         letter_box.children = (text_box,)
-                        box.children = (letter_box,) + tuple(box.children)
+                        box.children = (letter_box, *box.children)
                     else:
                         letter_box = boxes.BlockBox(
                             f'{box.element_tag}::first-letter',
@@ -339,7 +338,7 @@ def first_letter_to_box(box, skip_stack, first_letter_style):
                             f'{box.element_tag}::first-letter', letter_style,
                             box.element, first_letter)
                         line_box.children = (text_box,)
-                        box.children = (letter_box,) + tuple(box.children)
+                        box.children = (letter_box, *box.children)
                     build.process_text_transform(text_box)
                     if skip_stack and child_skip_stack:
                         index, = skip_stack
@@ -513,6 +512,18 @@ def split_inline_level(context, box, position_x, max_x, bottom_space,
             if getattr(box, f'margin_{side}') == 'auto':
                 setattr(box, f'margin_{side}', 0)
         new_box, resume_at, _, _, _ = flex_layout(
+            context, box, -inf, skip_stack, containing_block, False,
+            absolute_boxes, fixed_boxes)
+        preserved_line_break = False
+        first_letter = '\u2e80'
+        last_letter = '\u2e80'
+    elif isinstance(box, boxes.InlineGridBox):
+        box.position_x = position_x
+        box.position_y = 0
+        for side in ('top', 'right', 'bottom', 'left'):
+            if getattr(box, f'margin_{side}') == 'auto':
+                setattr(box, f'margin_{side}', 0)
+        new_box, resume_at, _, _, _ = grid_layout(
             context, box, -inf, skip_stack, containing_block, False,
             absolute_boxes, fixed_boxes)
         preserved_line_break = False
@@ -847,7 +858,7 @@ def split_inline_box(context, box, position_x, max_x, bottom_space, skip_stack,
                 skip_stack=None)
 
     if resume_at is not None:
-        index = tuple(resume_at)[0]
+        index = next(iter(resume_at))
         if index < float_resume_index:
             resume_at = {float_resume_index: None}
 
@@ -1038,7 +1049,9 @@ def inline_box_verticality(box, top_bottom_subtrees, baseline_y):
 
         # the child’s `top` is `child.baseline` above (lower y) its baseline.
         top = child_baseline_y - child.baseline
-        if isinstance(child, (boxes.InlineBlockBox, boxes.InlineFlexBox)):
+        box_types = (
+            boxes.InlineBlockBox, boxes.InlineFlexBox, boxes.InlineGridBox)
+        if isinstance(child, box_types):
             # This also includes table wrappers for inline tables.
             child.translate(dy=top - child.position_y)
         else:

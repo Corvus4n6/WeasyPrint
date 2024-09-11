@@ -6,21 +6,22 @@ See https://www.w3.org/TR/CSS21/propidx.html and various CSS3 modules.
 
 from math import inf
 
+from tinycss2 import parse_component_value_list
 from tinycss2.color3 import parse_color
 
 from .. import computed_values
-from ..properties import KNOWN_PROPERTIES, Dimension
-from ..utils import (
-    InvalidValues, check_var_function, comma_separated_list, get_angle,
-    get_content_list, get_content_list_token, get_custom_ident, get_image,
-    get_keyword, get_length, get_resolution, get_single_keyword, get_url,
-    parse_2d_position, parse_function, parse_position, remove_whitespace,
-    single_keyword, single_token)
+from ..properties import KNOWN_PROPERTIES, ZERO_PIXELS, Dimension
+
+from ..utils import (  # isort:skip
+    InvalidValues, Pending, check_var_function, comma_separated_list,
+    get_angle, get_content_list, get_content_list_token, get_custom_ident,
+    get_image, get_keyword, get_length, get_resolution, get_single_keyword,
+    get_url, parse_2d_position, parse_function, parse_position,
+    remove_whitespace, single_keyword, single_token)
 
 PREFIX = '-weasy-'
 PROPRIETARY = set()
 UNSTABLE = set()
-MULTIVAL_PROPERTIES = set()
 
 # Yes/no validators for non-shorthand properties
 # Maps property names to functions taking a property name and a value list,
@@ -30,10 +31,16 @@ MULTIVAL_PROPERTIES = set()
 PROPERTIES = {}
 
 
+class PendingProperty(Pending):
+    """Property with validation done when defining calculated values."""
+    def validate(self, tokens, wanted_key):
+        return validate_non_shorthand(tokens, self.name)[0][1]
+
+
 # Validators
 
 def property(property_name=None, proprietary=False, unstable=False,
-             multiple_values=False, wants_base_url=False):
+             wants_base_url=False):
     """Decorator adding a function to the ``PROPERTIES``.
 
     The name of the property covered by the decorated function is set to
@@ -69,39 +76,32 @@ def property(property_name=None, proprietary=False, unstable=False,
             PROPRIETARY.add(name)
         if unstable:
             UNSTABLE.add(name)
-        if multiple_values:
-            MULTIVAL_PROPERTIES.add(name)
         return function
     return decorator
 
 
-def validate_non_shorthand(name, tokens, base_url=None, required=False):
-    """Default validator for non-shorthand properties."""
+def validate_non_shorthand(tokens, name, base_url=None, required=False):
+    """Validator for non-shorthand properties."""
     if name.startswith('--'):
         # TODO: validate content
         return ((name, tokens),)
 
     if not required and name not in KNOWN_PROPERTIES:
-        hyphens_name = name.replace('_', '-')
-        if hyphens_name in KNOWN_PROPERTIES:
-            raise InvalidValues(f'you probably mean "{hyphens_name}"')
-        else:
-            raise InvalidValues('unknown property')
+        raise InvalidValues('unknown property')
 
     if not required and name not in PROPERTIES:
         raise InvalidValues('property not supported yet')
 
-    if name not in MULTIVAL_PROPERTIES:
-        for token in tokens:
-            var_function = check_var_function(token)
-            if var_function:
-                return ((name, var_function),)
+    function = PROPERTIES[name]
+    for token in tokens:
+        if check_var_function(token):
+            # Found CSS variable, return pending-substitution values.
+            return ((name, PendingProperty(tokens, name)),)
 
     keyword = get_single_keyword(tokens)
     if keyword in ('initial', 'inherit'):
         value = keyword
     else:
-        function = PROPERTIES[name]
         if function.wants_base_url:
             value = function(tokens, base_url)
         else:
@@ -168,9 +168,8 @@ def color(token):
 @comma_separated_list
 @single_token
 def background_image(token, base_url):
-    if token.type != 'function':
-        if get_keyword(token) == 'none':
-            return 'none', None
+    if get_keyword(token) == 'none':
+        return 'none', None
     return get_image(token, base_url)
 
 
@@ -422,6 +421,87 @@ def border_width(token):
         return keyword
 
 
+@property('border-image-source', wants_base_url=True)
+@property('mask-border-source', wants_base_url=True)
+@single_token
+def border_image_source(token, base_url):
+    if get_keyword(token) == 'none':
+        return 'none', None
+    return get_image(token, base_url)
+
+
+@property('border-image-slice')
+@property('mask-border-slice')
+def border_image_slice(tokens):
+    values = []
+    fill = False
+    for i, token in enumerate(tokens):
+        # Don't use get_length() because a dimension with a unit is disallowed.
+        if token.type == 'percentage' and token.value >= 0:
+            values.append(Dimension(token.value, '%'))
+        elif token.type == 'number' and token.value >= 0:
+            values.append(Dimension(token.value, None))
+        elif get_keyword(token) == 'fill' and not fill and i in (0, len(tokens) - 1):
+            fill = True
+            values.append('fill')
+        else:
+            return
+
+    if 1 <= len(values) - int(fill) <= 4:
+        return tuple(values)
+
+
+@property('border-image-width')
+@property('mask-border-width')
+def border_image_width(tokens):
+    values = []
+    for token in tokens:
+        if get_keyword(token) == 'auto':
+            values.append('auto')
+        elif token.type == 'number' and token.value >= 0:
+            values.append(Dimension(token.value, None))
+        else:
+            if length := get_length(token, negative=False, percentage=True):
+                values.append(length)
+            else:
+                return
+
+    if 1 <= len(values) <= 4:
+        return tuple(values)
+
+
+@property('border-image-outset')
+@property('mask-border-outset')
+def border_image_outset(tokens):
+    values = []
+    for token in tokens:
+        if token.type == 'number' and token.value >= 0:
+            values.append(Dimension(token.value, None))
+        else:
+            if length := get_length(token, negative=False):
+                values.append(length)
+            else:
+                return
+
+    if 1 <= len(values) <= 4:
+        return tuple(values)
+
+
+@property('border-image-repeat')
+@property('mask-border-repeat')
+def border_image_repeat(tokens):
+    if 1 <= len(tokens) <= 2:
+        keywords = tuple(get_keyword(token) for token in tokens)
+        if set(keywords) <= {'stretch', 'repeat', 'round', 'space'}:
+            return keywords
+
+
+@property()
+@single_keyword
+def mask_border_mode(keyword):
+    return keyword in ('luminance', 'alpha')
+
+
 @property(unstable=True)
 @single_token
 def column_width(token):
@@ -484,7 +564,7 @@ def clip(token):
         return ()
 
 
-@property(multiple_values=True, wants_base_url=True)
+@property(wants_base_url=True)
 def content(tokens, base_url):
     """``content`` property validation."""
     # See https://www.w3.org/TR/css-content-3/#content-property
@@ -590,11 +670,12 @@ def width_height(token):
         return 'auto'
 
 
-@property(unstable=True)
+@property('column-gap', unstable=True)
+@property('row-gap', unstable=True)
 @single_token
-def column_gap(token):
-    """Validation for the ``column-gap`` property."""
-    length = get_length(token, negative=False)
+def gap(token):
+    """Validation for the ``column-gap`` and ``row-gap`` properties."""
+    length = get_length(token, percentage=True, negative=False)
     if length:
         return length
     keyword = get_keyword(token)
@@ -630,7 +711,7 @@ def display(tokens):
                 'table-header-group', 'table-footer-group', 'table-row',
                 'table-column-group', 'table-column'):
             return (value,)
-        elif value in ('inline-table', 'inline-flex'):
+        elif value in ('inline-table', 'inline-flex', 'inline-grid'):
             return tuple(value.split('-'))
         elif value == 'inline-block':
             return ('inline', 'flow-root')
@@ -642,7 +723,7 @@ def display(tokens):
             if outside:
                 return
             outside = value
-        elif value in ('flow', 'flow-root', 'table', 'flex'):
+        elif value in ('flow', 'flow-root', 'table', 'flex', 'grid'):
             if inside:
                 return
             inside = value
@@ -714,8 +795,8 @@ def font_variant_ligatures(tokens):
         if token.type != 'ident':
             return None
         if token.value in all_values:
-            concurrent_values = [
-                couple for couple in couples if token.value in couple][0]
+            concurrent_values = next(
+                couple for couple in couples if token.value in couple)
             if any(value in values for value in concurrent_values):
                 return None
             else:
@@ -759,8 +840,8 @@ def font_variant_numeric(tokens):
         if token.type != 'ident':
             return None
         if token.value in all_values:
-            concurrent_values = [
-                couple for couple in couples if token.value in couple][0]
+            concurrent_values = next(
+                couple for couple in couples if token.value in couple)
             if any(value in values for value in concurrent_values):
                 return None
             else:
@@ -829,8 +910,8 @@ def font_variant_east_asian(tokens):
         if token.type != 'ident':
             return None
         if token.value in all_values:
-            concurrent_values = [
-                couple for couple in couples if token.value in couple][0]
+            concurrent_values = next(
+                couple for couple in couples if token.value in couple)
             if any(value in values for value in concurrent_values):
                 return None
             else:
@@ -1027,6 +1108,8 @@ def opacity(token):
     """Validation for the ``opacity`` property."""
     if token.type == 'number':
         return min(1, max(0, token.value))
+    if token.type == 'percentage':
+        return min(1, max(0, token.value / 100))
 
 
 @property()
@@ -1091,6 +1174,9 @@ def position(token):
 @property()
 def quotes(tokens):
     """``quotes`` property validation."""
+    if len(tokens) == 1:
+        if (keyword := get_keyword(tokens[0])) in ('auto', 'none'):
+            return keyword
     if (tokens and len(tokens) % 2 == 0 and
             all(token.type == 'string' for token in tokens)):
         strings = tuple(token.value for token in tokens)
@@ -1225,11 +1311,326 @@ def flex_grow_shrink(token):
         return token.value
 
 
+def _inflexible_breadth(token):
+    """Parse ``inflexible-breadth``."""
+    keyword = get_keyword(token)
+    if keyword in ('auto', 'min-content', 'max-content'):
+        return keyword
+    elif keyword:
+        return
+    length = get_length(token, negative=False, percentage=True)
+    if length:
+        return length
+
+
+def _track_breadth(token):
+    """Parse ``track-breadth``."""
+    if token.type == 'dimension' and token.value >= 0 and token.unit == 'fr':
+        return Dimension(token.value, token.unit)
+    return _inflexible_breadth(token)
+
+
+def _track_size(token):
+    """Parse ``track-size``."""
+    track_breadth = _track_breadth(token)
+    if track_breadth:
+        return track_breadth
+    function = parse_function(token)
+    if function:
+        name, args = function
+        if name == 'minmax':
+            if len(args) == 2:
+                inflexible_breadth = _inflexible_breadth(args[0])
+                track_breadth = _track_breadth(args[1])
+                if inflexible_breadth and track_breadth:
+                    return ('minmax()', inflexible_breadth, track_breadth)
+        elif name == 'fit-content':
+            if len(args) == 1:
+                length = get_length(args[0], negative=False, percentage=True)
+                if length:
+                    return ('fit-content()', length)
+
+
+def _fixed_size(token):
+    """Parse ``fixed-size``."""
+    length = get_length(token, negative=False, percentage=True)
+    if length:
+        return length
+    function = parse_function(token)
+    if function:
+        name, args = function
+        if name == 'minmax' and len(args) == 2:
+            length = get_length(args[0], negative=False, percentage=True)
+            if length:
+                track_breadth = _track_breadth(args[1])
+                if track_breadth:
+                    return ('minmax()', length, track_breadth)
+            keyword = get_keyword(args[0])
+            if keyword in ('min-content', 'max-content', 'auto') or length:
+                fixed_breadth = get_length(
+                    args[1], negative=False, percentage=True)
+                if fixed_breadth:
+                    return ('minmax()', length or keyword, fixed_breadth)
+
+
+def _line_names(arg):
+    """Parse ``line-names``."""
+    return_line_names = []
+    if arg.type == '[] block':
+        for token in arg.content:
+            if token.type == 'ident':
+                return_line_names.append(token.value)
+            elif token.type != 'whitespace':
+                return
+        return tuple(return_line_names)
+
+
+@property('grid-auto-columns')
+@property('grid-auto-rows')
+def grid_auto(tokens):
+    """``grid-auto-columns`` and ``grid-auto-rows`` properties validation."""
+    return_tokens = []
+    for token in tokens:
+        track_size = _track_size(token)
+        if track_size:
+            return_tokens.append(track_size)
+            continue
+        return
+    return tuple(return_tokens)
+
+
 @property()
-@single_token
-def order(token):
-    if token.type == 'number' and token.int_value is not None:
-        return token.int_value
+def grid_auto_flow(tokens):
+    """``grid-auto-flow`` property validation."""
+    if len(tokens) == 1:
+        keyword = get_keyword(tokens[0])
+        if keyword in ('row', 'column'):
+            return (keyword,)
+        elif keyword == 'dense':
+            return (keyword, 'row')
+    elif len(tokens) == 2:
+        keywords = [get_keyword(token) for token in tokens]
+        if 'dense' in keywords and ('row' in keywords or 'column' in keywords):
+            return tuple(keywords)
+
+
+@property('grid-template-columns')
+@property('grid-template-rows')
+def grid_template(tokens):
+    """``grid-template-columns`` and ``grid-template-rows`` validation."""
+    return_tokens = []
+    if len(tokens) == 1 and get_keyword(tokens[0]) == 'none':
+        return 'none'
+    if get_keyword(tokens[0]) == 'subgrid':
+        return_tokens.append('subgrid')
+        subgrid_tokens = []
+        for token in tokens[1:]:
+            line_names = _line_names(token)
+            if line_names is not None:
+                subgrid_tokens.append(line_names)
+                continue
+            function = parse_function(token)
+            if function:
+                name, args = function
+                if name == 'repeat' and len(args) >= 2:
+                    if (args[0].type == 'number' and
+                            args[0].is_integer and args[0].value >= 1):
+                        number = args[0].int_value
+                    elif get_keyword(args[0]) == 'auto-fill':
+                        number = 'auto-fill'
+                    else:
+                        return
+                    line_names_list = []
+                    for arg in args[1:]:
+                        line_names = _line_names(arg)
+                        if line_names is not None:
+                            line_names_list.append(line_names)
+                    subgrid_tokens.append(
+                        ('repeat()', number, tuple(line_names_list)))
+                    continue
+            return
+        return_tokens.append(tuple(subgrid_tokens))
+    else:
+        includes_auto_repeat = False
+        includes_track = False
+        last_is_line_name = False
+        for token in tokens:
+            line_names = _line_names(token)
+            if line_names is not None:
+                if last_is_line_name:
+                    return
+                last_is_line_name = True
+                return_tokens.append(line_names)
+                continue
+            fixed_size = _fixed_size(token)
+            if fixed_size:
+                if not last_is_line_name:
+                    return_tokens.append(())
+                last_is_line_name = False
+                return_tokens.append(fixed_size)
+                continue
+            track_size = _track_size(token)
+            if track_size:
+                if not last_is_line_name:
+                    return_tokens.append(())
+                last_is_line_name = False
+                return_tokens.append(track_size)
+                includes_track = True
+                continue
+            function = parse_function(token)
+            if function:
+                name, args = function
+                if name == 'repeat' and len(args) >= 2:
+                    if (args[0].type == 'number' and
+                            args[0].is_integer and args[0].value >= 1):
+                        number = args[0].int_value
+                    elif get_keyword(args[0]) in ('auto-fill', 'auto-fit'):
+                        # auto-repeat
+                        if includes_auto_repeat:
+                            return
+                        number = args[0].value
+                        includes_auto_repeat = True
+                    else:
+                        return
+                    names_and_sizes = []
+                    repeat_last_is_line_name = False
+                    for arg in args[1:]:
+                        line_names = _line_names(arg)
+                        if line_names is not None:
+                            if repeat_last_is_line_name:
+                                return
+                            names_and_sizes.append(line_names)
+                            repeat_last_is_line_name = True
+                            continue
+                        # fixed-repead
+                        fixed_size = _fixed_size(arg)
+                        if fixed_size:
+                            if not repeat_last_is_line_name:
+                                names_and_sizes.append(())
+                            repeat_last_is_line_name = False
+                            names_and_sizes.append(fixed_size)
+                            continue
+                        # track-repeat
+                        track_size = _track_size(arg)
+                        if track_size:
+                            includes_track = True
+                            if not repeat_last_is_line_name:
+                                names_and_sizes.append(())
+                            repeat_last_is_line_name = False
+                            names_and_sizes.append(track_size)
+                            continue
+                        return
+                    if not last_is_line_name:
+                        return_tokens.append(())
+                    last_is_line_name = False
+                    if not repeat_last_is_line_name:
+                        names_and_sizes.append(())
+                    return_tokens.append(
+                        ('repeat()', number, tuple(names_and_sizes)))
+                    continue
+            return
+        if includes_auto_repeat and includes_track:
+            return
+        if not last_is_line_name:
+            return_tokens.append(())
+    return tuple(return_tokens)
+
+
+@property()
+def grid_template_areas(tokens):
+    """``grid-template-areas`` property validation."""
+    if len(tokens) == 1 and get_keyword(tokens[0]) == 'none':
+        return 'none'
+    grid_areas = []
+    for token in tokens:
+        if token.type != 'string':
+            return
+        component_values = parse_component_value_list(token.value)
+        row = []
+        last_is_dot = False
+        for value in component_values:
+            if value.type == 'ident':
+                row.append(value.value)
+                last_is_dot = False
+            elif value.type == 'literal' and value.value == '.':
+                if last_is_dot:
+                    continue
+                row.append(None)
+                last_is_dot = True
+            elif value.type == 'whitespace':
+                last_is_dot = False
+            else:
+                return
+        if not row:
+            return
+        grid_areas.append(tuple(row))
+    # check row / column have the same sizes
+    if len(set(len(row) for row in grid_areas)) == 1:
+        # check areas are continuous rectangles
+        coordinates = set()
+        areas = set()
+        for y, row in enumerate(grid_areas):
+            for x, area in enumerate(row):
+                if (x, y) in coordinates or area is None:
+                    continue
+                if area in areas:
+                    return
+                areas.add(area)
+                coordinates.add((x, y))
+                nx = x + 1
+                for nx, narea in enumerate(row[x+1:], start=x+1):
+                    if narea != area:
+                        break
+                    coordinates.add((nx, y))
+                for ny, nrow in enumerate(grid_areas[y+1:], start=y+1):
+                    if set(nrow[x:nx]) == {area}:
+                        for nnx in range(x, nx):
+                            coordinates.add((nnx, ny))
+                    else:
+                        break
+        return tuple(grid_areas)
+
+
+@property('grid-row-start')
+@property('grid-row-end')
+@property('grid-column-start')
+@property('grid-column-end')
+def grid_line(tokens):
+    """``grid-[row|column]-[start—end]`` properties validation."""
+    if len(tokens) == 1:
+        token = tokens[0]
+        if keyword := get_keyword(token):
+            if keyword == 'auto':
+                return keyword
+            elif keyword != 'span':
+                return (None, None, keyword)
+        elif token.type == 'number' and token.is_integer and token.value:
+            return (None, token.int_value, None)
+        return
+    number = ident = span = None
+    for token in tokens:
+        if keyword := get_keyword(token):
+            if keyword == 'auto':
+                return
+            if keyword == 'span':
+                if span is None:
+                    span = 'span'
+                    continue
+            elif keyword and ident is None:
+                ident = keyword
+                continue
+        elif token.type == 'number' and token.is_integer and token.value:
+            if number is None:
+                number = token.int_value
+                continue
+        return
+    if span:
+        if number and number < 0:
+            return
+        elif ident or number:
+            return (span, number, ident)
+    elif number:
+        return (span, number, ident)
 
 
 @property()
@@ -1240,37 +1641,149 @@ def flex_wrap(keyword):
 
 
 @property()
-@single_keyword
-def justify_content(keyword):
+def justify_content(tokens):
     """``justify-content`` property validation."""
-    return keyword in (
-        'flex-start', 'flex-end', 'center', 'space-between', 'space-around',
-        'space-evenly', 'stretch')
+    if len(tokens) == 1:
+        keyword = get_keyword(tokens[0])
+        if keyword in (
+                'center', 'space-between', 'space-around', 'space-evenly',
+                'stretch', 'normal', 'flex-start', 'flex-end',
+                'start', 'end', 'left', 'right'):
+            return (keyword,)
+    elif len(tokens) == 2:
+        keywords = tuple(get_keyword(token) for token in tokens)
+        if keywords[0] in ('safe', 'unsafe'):
+            if keywords[1] in (
+                    'center', 'start', 'end', 'flex-start', 'flex-end', 'left',
+                    'right'):
+                return keywords
 
 
 @property()
-@single_keyword
-def align_items(keyword):
+def justify_items(tokens):
+    """``justify-items`` property validation."""
+    if len(tokens) == 1:
+        keyword = get_keyword(tokens[0])
+        if keyword in (
+                'normal', 'stretch', 'center', 'start', 'end', 'self-start',
+                'self-end', 'flex-start', 'flex-end', 'left', 'right',
+                'legacy'):
+            return (keyword,)
+        elif keyword == 'baseline':
+            return ('first', keyword)
+    elif len(tokens) == 2:
+        keywords = tuple(get_keyword(token) for token in tokens)
+        if keywords[0] in ('safe', 'unsafe'):
+            if keywords[1] in (
+                    'center', 'start', 'end', 'self-start', 'self-end',
+                    'flex-start', 'flex-end', 'left', 'right'):
+                return keywords
+        elif 'baseline' in keywords:
+            if 'first' in keywords or 'last' in keywords:
+                return keywords
+        elif 'legacy' in keywords:
+            if set(keywords) & {'left', 'right', 'center'}:
+                return keywords
+
+
+@property()
+def justify_self(tokens):
+    """``justify-self`` property validation."""
+    if len(tokens) == 1:
+        keyword = get_keyword(tokens[0])
+        if keyword in (
+                'auto', 'normal', 'stretch', 'center', 'start', 'end',
+                'self-start', 'self-end', 'flex-start', 'flex-end', 'left',
+                'right'):
+            return (keyword,)
+        elif keyword == 'baseline':
+            return ('first', keyword)
+    elif len(tokens) == 2:
+        keywords = tuple(get_keyword(token) for token in tokens)
+        if keywords[0] in ('safe', 'unsafe'):
+            if keywords[1] in (
+                    'center', 'start', 'end', 'self-start', 'self-end',
+                    'flex-start', 'flex-end', 'left', 'right'):
+                return keywords
+        elif 'baseline' in keywords:
+            if 'first' in keywords or 'last' in keywords:
+                return keywords
+
+
+@property()
+def align_items(tokens):
     """``align-items`` property validation."""
-    return keyword in (
-        'flex-start', 'flex-end', 'center', 'baseline', 'stretch')
+    if len(tokens) == 1:
+        keyword = get_keyword(tokens[0])
+        if keyword in (
+                'normal', 'stretch', 'center', 'start', 'end', 'self-start',
+                'self-end', 'flex-start', 'flex-end'):
+            return (keyword,)
+        elif keyword == 'baseline':
+            return ('first', keyword)
+    elif len(tokens) == 2:
+        keywords = tuple(get_keyword(token) for token in tokens)
+        if keywords[0] in ('safe', 'unsafe'):
+            if keywords[1] in (
+                    'center', 'start', 'end', 'self-start', 'self-end',
+                    'flex-start', 'flex-end'):
+                return keywords
+        elif 'baseline' in keywords:
+            if 'first' in keywords or 'last' in keywords:
+                return keywords
 
 
 @property()
-@single_keyword
-def align_self(keyword):
+def align_self(tokens):
     """``align-self`` property validation."""
-    return keyword in (
-        'auto', 'flex-start', 'flex-end', 'center', 'baseline', 'stretch')
+    if len(tokens) == 1:
+        keyword = get_keyword(tokens[0])
+        if keyword in (
+                'auto', 'normal', 'stretch', 'center', 'start', 'end',
+                'self-start', 'self-end', 'flex-start', 'flex-end'):
+            return (keyword,)
+        elif keyword == 'baseline':
+            return ('first', keyword)
+    elif len(tokens) == 2:
+        keywords = tuple(get_keyword(token) for token in tokens)
+        if keywords[0] in ('safe', 'unsafe'):
+            if keywords[1] in (
+                    'center', 'start', 'end', 'self-start', 'self-end',
+                    'flex-start', 'flex-end'):
+                return keywords
+        elif 'baseline' in keywords:
+            if 'first' in keywords or 'last' in keywords:
+                return keywords
 
 
 @property()
-@single_keyword
-def align_content(keyword):
+def align_content(tokens):
     """``align-content`` property validation."""
-    return keyword in (
-        'flex-start', 'flex-end', 'center', 'space-between', 'space-around',
-        'space-evenly', 'stretch')
+    if len(tokens) == 1:
+        keyword = get_keyword(tokens[0])
+        if keyword in (
+                'center', 'space-between', 'space-around', 'space-evenly',
+                'stretch', 'normal', 'flex-start', 'flex-end',
+                'start', 'end'):
+            return (keyword,)
+        elif keyword == 'baseline':
+            return ('first', keyword)
+    elif len(tokens) == 2:
+        keywords = tuple(get_keyword(token) for token in tokens)
+        if keywords[0] in ('safe', 'unsafe'):
+            if keywords[1] in (
+                    'center', 'start', 'end', 'flex-start', 'flex-end'):
+                return keywords
+        elif 'baseline' in keywords:
+            if 'first' in keywords or 'last' in keywords:
+                return keywords
+
+
+@property()
+@single_token
+def order(token):
+    if token.type == 'number' and token.int_value is not None:
+        return token.int_value
 
 
 @property(unstable=True)
@@ -1555,11 +2068,9 @@ def transform(tokens):
                 elif name == 'skewy' and angle is not None:
                     transforms.append(('skew', (0, angle)))
                 elif name in ('translatex', 'translate') and length:
-                    transforms.append((
-                        'translate', (length, computed_values.ZERO_PIXELS)))
+                    transforms.append(('translate', (length, ZERO_PIXELS)))
                 elif name == 'translatey' and length:
-                    transforms.append((
-                        'translate', (computed_values.ZERO_PIXELS, length)))
+                    transforms.append(('translate', (ZERO_PIXELS, length)))
                 elif name == 'scalex' and args[0].type == 'number':
                     transforms.append(('scale', (args[0].value, 1)))
                 elif name == 'scaley' and args[0].type == 'number':

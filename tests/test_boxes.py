@@ -1,25 +1,14 @@
 """Test that the "before layout" box tree is correctly constructed."""
 
 import pytest
+
 from weasyprint.css import PageType, get_all_computed_styles
 from weasyprint.formatting_structure import boxes, build
 from weasyprint.layout.page import set_page_type_computed_styles
 
-from .testing_utils import (
+from .testing_utils import (  # isort:skip
     FakeHTML, assert_no_logs, assert_tree, capture_logs, parse, parse_all,
     render_pages)
-
-
-def _get_grid(html):
-    html = parse_all(html)
-    body, = html.children
-    table_wrapper, = body.children
-    table, = table_wrapper.children
-    return tuple(
-        [[(style, width, color) if width else None
-          for _score, (style, width, color) in column]
-         for column in grid]
-        for grid in table.collapsed_border_grid)
 
 
 @assert_no_logs
@@ -43,7 +32,7 @@ def test_box_tree():
 @assert_no_logs
 def test_html_entities():
     for quote in ['"', '&quot;', '&#x22;', '&#34;']:
-        assert_tree(parse('<p>{0}abc{1}'.format(quote, quote)), [
+        assert_tree(parse(f'<p>{quote}abc{quote}'), [
             ('p', 'Block', [
                 ('p', 'Text', '"abc"')])])
 
@@ -341,6 +330,15 @@ def test_tables_1():
     # Rule 1.3
     # Also table model: https://www.w3.org/TR/CSS21/tables.html#model
     assert_tree(parse_all('''
+      <style>
+        x-table { display: table }
+        x-tr { display: table-row }
+        x-td, x-th { display: table-cell }
+        x-thead { display: table-header-group }
+        x-tfoot { display: table-footer-group }
+        x-col { display: table-column }
+        x-caption { display: table-caption }
+      </style>
       <x-table>
         <x-tr>
           <x-th>foo</x-th>
@@ -431,7 +429,7 @@ def test_tables_3():
 @assert_no_logs
 def test_tables_4():
     # Rules 2.1 then 2.3
-    assert_tree(parse_all('<x-table>foo <div></div></x-table>'), [
+    assert_tree(parse_all('<x-table style="display:table">foo <div></div></x-table>'), [
         ('x-table', 'Block', [
             ('x-table', 'Table', [
                 ('x-table', 'TableRowGroup', [
@@ -446,8 +444,8 @@ def test_tables_4():
 @assert_no_logs
 def test_tables_5():
     # Rule 2.2
-    assert_tree(parse_all('<x-thead style="display: table-header-group">'
-                          '<div></div><x-td></x-td></x-thead>'), [
+    assert_tree(parse_all('<x-thead style="display: table-header-group"><div></div>'
+                          '<x-td style="display: table-cell"></x-td></x-thead>'), [
         ('body', 'Block', [
             ('body', 'Table', [
                 ('x-thead', 'TableRowGroup', [
@@ -460,7 +458,7 @@ def test_tables_5():
 @assert_no_logs
 def test_tables_6():
     # Rule 3.2
-    assert_tree(parse_all('<span><x-tr></x-tr></span>'), [
+    assert_tree(parse_all('<span><x-tr style="display: table-row"></x-tr></span>'), [
         ('body', 'Line', [
             ('span', 'Inline', [
                 ('span', 'InlineBlock', [
@@ -496,7 +494,10 @@ def test_tables_7():
 @assert_no_logs
 def test_tables_8():
     # Rule 3.2
-    assert_tree(parse_all('<x-tr></x-tr>\t<x-tr></x-tr>'), [
+    assert_tree(parse_all(
+        '<x-tr style="display: table-row"></x-tr>\t'
+        '<x-tr style="display: table-row"></x-tr>'
+    ), [
         ('body', 'Block', [
             ('body', 'Table', [
                 ('body', 'TableRowGroup', [
@@ -506,7 +507,10 @@ def test_tables_8():
 
 @assert_no_logs
 def test_tables_9():
-    assert_tree(parse_all('<x-col></x-col>\n<x-colgroup></x-colgroup>'), [
+    assert_tree(parse_all(
+        '<x-col style="display: table-column"></x-col>\n'
+        '<x-colgroup style="display: table-column-group"></x-colgroup>'
+    ), [
         ('body', 'Block', [
             ('body', 'Table', [
                 ('body', 'TableColumnGroup', [
@@ -769,6 +773,138 @@ def test_before_after_5():
 
 
 @assert_no_logs
+def test_quotes_auto():
+    assert_tree(parse_all('''
+      <style>
+        body { quotes: auto }
+        q:before { content: open-quote ' '}
+        q:after { content: ' ' close-quote }
+      </style>
+      <p><q>Lorem ipsum <q>dolor</q> sit amet</q></p>
+    '''), [
+        ('p', 'Block', [
+            ('p', 'Line', [
+                ('q', 'Inline', [
+                    ('q::before', 'Inline', [
+                        ('q::before', 'Text', '“ ')]),
+                    ('q', 'Text', 'Lorem ipsum '),
+                    ('q', 'Inline', [
+                        ('q::before', 'Inline', [
+                            ('q::before', 'Text', '‘ ')]),
+                        ('q', 'Text', 'dolor'),
+                        ('q::after', 'Inline', [
+                            ('q::after', 'Text', ' ’')])]),
+                    ('q', 'Text', ' sit amet'),
+                    ('q::after', 'Inline', [
+                        ('q::after', 'Text', ' ”')])])])])])
+
+
+@assert_no_logs
+def test_quotes_none():
+    assert_tree(parse_all('''
+      <style>
+        body { quotes: none }
+        q:before { content: open-quote ' '}
+        q:after { content: ' ' close-quote }
+      </style>
+      <p><q>Lorem ipsum <q>dolor</q> sit amet</q></p>
+    '''), [
+        ('p', 'Block', [
+            ('p', 'Line', [
+                ('q', 'Inline', [
+                    ('q::before', 'Inline', [
+                        ('q::before', 'Text', ' ')]),
+                    ('q', 'Text', 'Lorem ipsum '),
+                    ('q', 'Inline', [
+                        ('q::before', 'Inline', [
+                            ('q::before', 'Text', ' ')]),
+                        ('q', 'Text', 'dolor'),
+                        ('q::after', 'Inline', [
+                            ('q::after', 'Text', ' ')])]),
+                    ('q', 'Text', ' sit amet'),
+                    ('q::after', 'Inline', [
+                        ('q::after', 'Text', ' ')])])])])])
+
+
+@assert_no_logs
+def test_quotes_lang():
+    assert_tree(parse_all('''
+      <style>
+        q:before { content: open-quote ' '}
+        q:after { content: ' ' close-quote }
+      </style>
+      <p lang="fr"><q>Lorem ipsum <q>dolor</q> sit amet</q></p>
+    '''), [
+        ('p', 'Block', [
+            ('p', 'Line', [
+                ('q', 'Inline', [
+                    ('q::before', 'Inline', [
+                        ('q::before', 'Text', '« ')]),
+                    ('q', 'Text', 'Lorem ipsum '),
+                    ('q', 'Inline', [
+                        ('q::before', 'Inline', [
+                            ('q::before', 'Text', '« ')]),
+                        ('q', 'Text', 'dolor'),
+                        ('q::after', 'Inline', [
+                            ('q::after', 'Text', ' »')])]),
+                    ('q', 'Text', ' sit amet'),
+                    ('q::after', 'Inline', [
+                        ('q::after', 'Text', ' »')])])])])])
+
+
+@assert_no_logs
+def test_quotes_lang_alternate():
+    assert_tree(parse_all('''
+      <style>
+        q:before { content: open-quote ' '}
+        q:after { content: ' ' close-quote }
+      </style>
+      <p lang="fr_CH"><q>Lorem ipsum <q>dolor</q> sit amet</q></p>
+    '''), [
+        ('p', 'Block', [
+            ('p', 'Line', [
+                ('q', 'Inline', [
+                    ('q::before', 'Inline', [
+                        ('q::before', 'Text', '« ')]),
+                    ('q', 'Text', 'Lorem ipsum '),
+                    ('q', 'Inline', [
+                        ('q::before', 'Inline', [
+                            ('q::before', 'Text', '‹ ')]),
+                        ('q', 'Text', 'dolor'),
+                        ('q::after', 'Inline', [
+                            ('q::after', 'Text', ' ›')])]),
+                    ('q', 'Text', ' sit amet'),
+                    ('q::after', 'Inline', [
+                        ('q::after', 'Text', ' »')])])])])])
+
+
+@assert_no_logs
+def test_quotes_lang_parent():
+    assert_tree(parse_all('''
+      <style>
+        q:before { content: open-quote ' '}
+        q:after { content: ' ' close-quote }
+      </style>
+      <p lang="fr_CH_alt"><q>Lorem ipsum <q>dolor</q> sit amet</q></p>
+    '''), [
+        ('p', 'Block', [
+            ('p', 'Line', [
+                ('q', 'Inline', [
+                    ('q::before', 'Inline', [
+                        ('q::before', 'Text', '« ')]),
+                    ('q', 'Text', 'Lorem ipsum '),
+                    ('q', 'Inline', [
+                        ('q::before', 'Inline', [
+                            ('q::before', 'Text', '‹ ')]),
+                        ('q', 'Text', 'dolor'),
+                        ('q::after', 'Inline', [
+                            ('q::after', 'Text', ' ›')])]),
+                    ('q', 'Text', ' sit amet'),
+                    ('q::after', 'Inline', [
+                        ('q::after', 'Text', ' »')])])])])])
+
+
+@assert_no_logs
 def test_margin_boxes():
     page_1, page_2 = render_pages('''
       <style>
@@ -840,12 +976,12 @@ def test_margin_box_string_set_2():
               @top-center { content: string(text_header) }
             }
             p {
-              string-set: text_header content(%(content_val)s);
+              string-set: text_header content(%s);
             }
-            %(extra_style)s
+            %s
           </style>
           <p>first assignment</p>
-        ''' % dict(content_val=content_val, extra_style=extra_style))
+        ''' % (content_val, extra_style))
 
         html, top_center = page_1.children
         line_box, = top_center.children
@@ -1112,123 +1248,7 @@ def test_page_counters():
         html, bottom_center = page.children
         line_box, = bottom_center.children
         text_box, = line_box.children
-        assert text_box.text == 'Page {0} of 3.'.format(page_number)
-
-
-black = (0, 0, 0, 1)
-red = (1, 0, 0, 1)
-green = (0, 1, 0, 1)  # lime in CSS
-blue = (0, 0, 1, 1)
-yellow = (1, 1, 0, 1)
-black_3 = ('solid', 3, black)
-red_1 = ('solid', 1, red)
-yellow_5 = ('solid', 5, yellow)
-green_5 = ('solid', 5, green)
-dashed_blue_5 = ('dashed', 5, blue)
-
-
-@assert_no_logs
-def test_border_collapse_1():
-    html = parse_all('<table></table>')
-    body, = html.children
-    table_wrapper, = body.children
-    table, = table_wrapper.children
-    assert isinstance(table, boxes.TableBox)
-    assert not hasattr(table, 'collapsed_border_grid')
-
-    grid = _get_grid('<table style="border-collapse: collapse"></table>')
-    assert grid == ([], [])
-
-
-@assert_no_logs
-def test_border_collapse_2():
-    vertical_borders, horizontal_borders = _get_grid('''
-      <style>td { border: 1px solid red }</style>
-      <table style="border-collapse: collapse; border: 3px solid black">
-        <tr> <td>A</td> <td>B</td> </tr>
-        <tr> <td>C</td> <td>D</td> </tr>
-      </table>
-    ''')
-    assert vertical_borders == [
-        [black_3, red_1, black_3],
-        [black_3, red_1, black_3],
-    ]
-    assert horizontal_borders == [
-        [black_3, black_3],
-        [red_1, red_1],
-        [black_3, black_3],
-    ]
-
-
-@assert_no_logs
-def test_border_collapse_3():
-    # hidden vs. none
-    vertical_borders, horizontal_borders = _get_grid('''
-      <style>table, td { border: 3px solid }</style>
-      <table style="border-collapse: collapse">
-        <tr> <td>A</td> <td style="border-style: hidden">B</td> </tr>
-        <tr> <td>C</td> <td style="border-style: none">D</td> </tr>
-      </table>
-    ''')
-    assert vertical_borders == [
-        [black_3, None, None],
-        [black_3, black_3, black_3],
-    ]
-    assert horizontal_borders == [
-        [black_3, None],
-        [black_3, None],
-        [black_3, black_3],
-    ]
-
-
-@assert_no_logs
-def test_border_collapse_4():
-    vertical_borders, horizontal_borders = _get_grid('''
-      <style>td { border: 1px solid red }</style>
-      <table style="border-collapse: collapse; border: 5px solid yellow">
-        <col style="border: 3px solid black" />
-        <tr> <td></td> <td></td> <td></td> </tr>
-        <tr> <td></td> <td style="border: 5px dashed blue"></td>
-          <td style="border: 5px solid lime"></td> </tr>
-        <tr> <td></td> <td></td> <td></td> </tr>
-        <tr> <td></td> <td></td> <td></td> </tr>
-      </table>
-    ''')
-    assert vertical_borders == [
-        [yellow_5, black_3, red_1, yellow_5],
-        [yellow_5, dashed_blue_5, green_5, green_5],
-        [yellow_5, black_3, red_1, yellow_5],
-        [yellow_5, black_3, red_1, yellow_5],
-    ]
-    assert horizontal_borders == [
-        [yellow_5, yellow_5, yellow_5],
-        [red_1, dashed_blue_5, green_5],
-        [red_1, dashed_blue_5, green_5],
-        [red_1, red_1, red_1],
-        [yellow_5, yellow_5, yellow_5],
-    ]
-
-
-@assert_no_logs
-def test_border_collapse_5():
-    # rowspan and colspan
-    vertical_borders, horizontal_borders = _get_grid('''
-        <style>col, tr { border: 3px solid }</style>
-        <table style="border-collapse: collapse">
-            <col /><col /><col />
-            <tr> <td rowspan=2></td> <td></td> <td></td> </tr>
-            <tr>                     <td colspan=2></td> </tr>
-        </table>
-    ''')
-    assert vertical_borders == [
-        [black_3, black_3, black_3, black_3],
-        [black_3, black_3, None, black_3],
-    ]
-    assert horizontal_borders == [
-        [black_3, black_3, black_3],
-        [None, black_3, black_3],
-        [black_3, black_3, black_3],
-    ]
+        assert text_box.text == f'Page {page_number} of 3.'
 
 
 @assert_no_logs

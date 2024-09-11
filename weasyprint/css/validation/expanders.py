@@ -6,19 +6,46 @@ from tinycss2.ast import DimensionToken, IdentToken, NumberToken
 from tinycss2.color3 import parse_color
 
 from ..properties import INITIAL_VALUES
-from ..utils import (
-    InvalidValues, get_keyword, get_single_keyword, split_on_comma)
 from .descriptors import expand_font_variant
-from .properties import (
-    background_attachment, background_image, background_position,
-    background_repeat, background_size, block_ellipsis, border_style,
+
+from ..utils import (  # isort:skip
+    InvalidValues, Pending, check_var_function, get_keyword, get_single_keyword,
+    split_on_comma)
+from .properties import ( # isort:skip
+    background_attachment, background_image, background_position, background_repeat,
+    background_size, block_ellipsis, border_image_source, border_image_slice,
+    border_image_width, border_image_outset, border_image_repeat, border_style,
     border_width, box, column_count, column_width, flex_basis, flex_direction,
     flex_grow_shrink, flex_wrap, font_family, font_size, font_stretch,
-    font_style, font_weight, line_height, list_style_image,
-    list_style_position, list_style_type, other_colors, overflow_wrap,
-    validate_non_shorthand)
+    font_style, font_weight, gap, grid_line, grid_template, line_height,
+    list_style_image, list_style_position, list_style_type, mask_border_mode,
+    other_colors, overflow_wrap, validate_non_shorthand)
 
 EXPANDERS = {}
+
+
+class PendingExpander(Pending):
+    """Expander with validation done when defining calculated values."""
+    def __init__(self, tokens, validator):
+        super().__init__(tokens, validator.keywords['name'])
+        self.validator = validator
+
+    def validate(self, tokens, wanted_key):
+        for key, value in self.validator(tokens):
+            if key.startswith('-'):
+                key = f'{self.validator.keywords["name"]}{key}'
+            if key == wanted_key:
+                return value
+        raise KeyError
+
+
+def _find_var(tokens, expander, expanded_names):
+    """Return pending expanders when var is found in tokens."""
+    for token in tokens:
+        if check_var_function(token):
+            # Found CSS variable, keep pending-substitution values.
+            pending = PendingExpander(tokens, expander)
+            return {name: pending for name in expanded_names}
 
 
 def expander(property_name):
@@ -29,39 +56,6 @@ def expander(property_name):
         EXPANDERS[property_name] = function
         return function
     return expander_decorator
-
-
-@expander('border-color')
-@expander('border-style')
-@expander('border-width')
-@expander('margin')
-@expander('padding')
-@expander('bleed')
-def expand_four_sides(name, tokens, base_url):
-    """Expand properties setting a token for the four sides of a box."""
-    # Make sure we have 4 tokens
-    if len(tokens) == 1:
-        tokens *= 4
-    elif len(tokens) == 2:
-        tokens *= 2  # (bottom, left) defaults to (top, right)
-    elif len(tokens) == 3:
-        tokens += (tokens[1],)  # left defaults to right
-    elif len(tokens) != 4:
-        raise InvalidValues(
-            f'Expected 1 to 4 token components got {len(tokens)}')
-    for suffix, token in zip(('-top', '-right', '-bottom', '-left'), tokens):
-        i = name.rfind('-')
-        if i == -1:
-            new_name = name + suffix
-        else:
-            # eg. border-color becomes border-*-color, not border-color-*
-            new_name = name[:i] + suffix + name[i:]
-
-        # validate_non_shorthand returns ((name, value),), we want
-        # to yield (name, value)
-        result, = validate_non_shorthand(
-            new_name, [token], base_url, required=True)
-        yield result
 
 
 def generic_expander(*expanded_names, **kwargs):
@@ -78,19 +72,27 @@ def generic_expander(*expanded_names, **kwargs):
     def generic_expander_decorator(wrapped):
         """Decorate the ``wrapped`` expander."""
         @functools.wraps(wrapped)
-        def generic_expander_wrapper(name, tokens, base_url):
+        def generic_expander_wrapper(tokens, name, base_url):
             """Wrap the expander."""
+            expander = functools.partial(
+                generic_expander_wrapper, name=name, base_url=base_url)
+
+            skip_validation = False
             keyword = get_single_keyword(tokens)
             if keyword in ('inherit', 'initial'):
-                results = dict.fromkeys(expanded_names, keyword)
+                results = {name: keyword for name in expanded_names}
                 skip_validation = True
             else:
-                skip_validation = False
+                results = _find_var(tokens, expander, expanded_names)
+                if results:
+                    skip_validation = True
+
+            if not skip_validation:
                 results = {}
                 if wants_base_url:
-                    result = wrapped(name, tokens, base_url)
+                    result = wrapped(tokens, name, base_url)
                 else:
-                    result = wrapped(name, tokens)
+                    result = wrapped(tokens, name)
                 for new_name, new_token in result:
                     assert new_name in expanded_names, new_name
                     if new_name in results:
@@ -102,7 +104,7 @@ def generic_expander(*expanded_names, **kwargs):
             for new_name in expanded_names:
                 if new_name.startswith('-'):
                     # new_name is a suffix
-                    actual_new_name = name + new_name
+                    actual_new_name = f'{name}{new_name}'
                 else:
                     actual_new_name = new_name
 
@@ -111,7 +113,7 @@ def generic_expander(*expanded_names, **kwargs):
                     if not skip_validation:
                         # validate_non_shorthand returns ((name, value),)
                         (actual_new_name, value), = validate_non_shorthand(
-                            actual_new_name, value, base_url, required=True)
+                            value, actual_new_name, base_url, required=True)
                 else:
                     value = 'initial'
 
@@ -120,12 +122,54 @@ def generic_expander(*expanded_names, **kwargs):
     return generic_expander_decorator
 
 
+@expander('border-color')
+@expander('border-style')
+@expander('border-width')
+@expander('margin')
+@expander('padding')
+@expander('bleed')
+def expand_four_sides(tokens, name, base_url):
+    """Expand properties setting a token for the four sides of a box."""
+    # Define expanded names.
+    expanded_names = []
+    for suffix in ('-top', '-right', '-bottom', '-left'):
+        if (i := name.rfind('-')) == -1:
+            expanded_names.append(f'{name}{suffix}')
+        else:
+            # eg. border-color becomes border-*-color, not border-color-*
+            expanded_names.append(f'{name[:i]}{suffix}{name[i:]}')
+
+    # Return pending expanders if var is found.
+    expander = functools.partial(
+        expand_four_sides, name=name, base_url=base_url)
+    if result := _find_var(tokens, expander, expanded_names):
+        yield from result.items()
+        return
+
+    # Make sure we have 4 tokens.
+    if len(tokens) == 1:
+        tokens *= 4
+    elif len(tokens) == 2:
+        tokens *= 2  # (bottom, left) defaults to (top, right)
+    elif len(tokens) == 3:
+        tokens += (tokens[1],)  # left defaults to right
+    elif len(tokens) != 4:
+        raise InvalidValues(
+            f'Expected 1 to 4 token components got {len(tokens)}')
+    for expanded_name, token in zip(expanded_names, tokens):
+        # validate_non_shorthand returns ((name, value),), we want
+        # to yield (name, value).
+        result, = validate_non_shorthand(
+            [token], expanded_name, base_url, required=True)
+        yield result
+
+
 @expander('border-radius')
 @generic_expander(
     'border-top-left-radius', 'border-top-right-radius',
     'border-bottom-right-radius', 'border-bottom-left-radius',
     wants_base_url=True)
-def border_radius(name, tokens, base_url):
+def border_radius(tokens, name, base_url):
     """Validator for the ``border-radius`` property."""
     current = horizontal = []
     vertical = []
@@ -157,14 +201,14 @@ def border_radius(name, tokens, base_url):
                 f'Expected 1 to 4 token components got {len(values)}')
     corners = ('top-left', 'top-right', 'bottom-right', 'bottom-left')
     for corner, tokens in zip(corners, zip(horizontal, vertical)):
-        new_name = f'border-{corner}-radius'
-        validate_non_shorthand(new_name, tokens, base_url, required=True)
-        yield new_name, tokens
+        name = f'border-{corner}-radius'
+        validate_non_shorthand(tokens, name, base_url, required=True)
+        yield name, tokens
 
 
 @expander('list-style')
 @generic_expander('-type', '-position', '-image', wants_base_url=True)
-def expand_list_style(name, tokens, base_url):
+def expand_list_style(tokens, name, base_url):
     """Expand the ``list-style`` shorthand property.
 
     See https://www.w3.org/TR/CSS21/generate.html#propdef-list-style
@@ -206,14 +250,14 @@ def expand_list_style(name, tokens, base_url):
 
 
 @expander('border')
-def expand_border(name, tokens, base_url):
+def expand_border(tokens, name, base_url):
     """Expand the ``border`` shorthand property.
 
     See https://www.w3.org/TR/CSS21/box.html#propdef-border
 
     """
     for suffix in ('-top', '-right', '-bottom', '-left'):
-        for new_prop in expand_border_side(name + suffix, tokens, base_url):
+        for new_prop in expand_border_side(tokens, name + suffix, base_url):
             yield new_prop
 
 
@@ -224,7 +268,7 @@ def expand_border(name, tokens, base_url):
 @expander('column-rule')
 @expander('outline')
 @generic_expander('-width', '-color', '-style')
-def expand_border_side(name, tokens):
+def expand_border_side(tokens, name):
     """Expand the ``border-*`` shorthand properties.
 
     See https://www.w3.org/TR/CSS21/box.html#propdef-border-top
@@ -242,21 +286,157 @@ def expand_border_side(name, tokens):
         yield suffix, [token]
 
 
+@expander('border-image')
+@generic_expander('-outset', '-repeat', '-slice', '-source', '-width',
+                  wants_base_url=True)
+def expand_border_image(tokens, name, base_url):
+    """Expand the ``border-image-*`` shorthand properties.
+
+    See https://drafts.csswg.org/css-backgrounds/#the-border-image
+
+    """
+    tokens = list(tokens)
+    while tokens:
+        if border_image_source(tokens[:1], base_url):
+            yield '-source', [tokens.pop(0)]
+        elif border_image_repeat(tokens[:1]):
+            repeats = [tokens.pop(0)]
+            while tokens and border_image_repeat(tokens[:1]):
+                repeats.append(tokens.pop(0))
+            yield '-repeat', repeats
+        elif border_image_slice(tokens[:1]) or get_keyword(tokens[0]) == 'fill':
+            slices = [tokens.pop(0)]
+            while tokens and border_image_slice(slices + tokens[:1]):
+                slices.append(tokens.pop(0))
+            yield '-slice', slices
+            if tokens and tokens[0].type == 'literal' and tokens[0].value == '/':
+                # slices / *
+                tokens.pop(0)
+            else:
+                # slices other
+                continue
+            if not tokens:
+                # slices /
+                raise InvalidValues
+            if border_image_width(tokens[:1]):
+                widths = [tokens.pop(0)]
+                while tokens and border_image_width(widths + tokens[:1]):
+                    widths.append(tokens.pop(0))
+                yield '-width', widths
+                if tokens and tokens[0].type == 'literal' and tokens[0].value == '/':
+                    # slices / widths / slash *
+                    tokens.pop(0)
+                else:
+                    # slices / widths other
+                    continue
+            elif tokens and tokens[0].type == 'literal' and tokens[0].value == '/':
+                # slices / / *
+                tokens.pop(0)
+            else:
+                # slices / other
+                raise InvalidValues
+            if not tokens:
+                # slices / * /
+                raise InvalidValues
+            if border_image_outset(tokens[:1]):
+                outsets = [tokens.pop(0)]
+                while tokens and border_image_outset(outsets + tokens[:1]):
+                    outsets.append(tokens.pop(0))
+                yield '-outset', outsets
+            else:
+                # slash / * / other
+                raise InvalidValues
+        else:
+            raise InvalidValues
+
+
+@expander('mask-border')
+@generic_expander('-outset', '-repeat', '-slice', '-source', '-width', '-mode',
+                  wants_base_url=True)
+def expand_mask_border(tokens, name, base_url):
+    """Expand the ``mask-border-*`` shorthand properties.
+
+    See https://drafts.fxtf.org/css-masking/#the-mask-border
+
+    """
+    tokens = list(tokens)
+    while tokens:
+        if border_image_source(tokens[:1], base_url):
+            yield '-source', [tokens.pop(0)]
+        elif mask_border_mode(tokens[:1]):
+            yield '-mode', [tokens.pop(0)]
+        elif border_image_repeat(tokens[:1]):
+            repeats = [tokens.pop(0)]
+            while tokens and border_image_repeat(tokens[:1]):
+                repeats.append(tokens.pop(0))
+            yield '-repeat', repeats
+        elif border_image_slice(tokens[:1]) or get_keyword(tokens[0]) == 'fill':
+            slices = [tokens.pop(0)]
+            while tokens and border_image_slice(slices + tokens[:1]):
+                slices.append(tokens.pop(0))
+            yield '-slice', slices
+            if tokens and tokens[0].type == 'literal' and tokens[0].value == '/':
+                # slices / *
+                tokens.pop(0)
+            else:
+                # slices other
+                continue
+            if not tokens:
+                # slices /
+                raise InvalidValues
+            if border_image_width(tokens[:1]):
+                widths = [tokens.pop(0)]
+                while tokens and border_image_width(widths + tokens[:1]):
+                    widths.append(tokens.pop(0))
+                yield '-width', widths
+                if tokens and tokens[0].type == 'literal' and tokens[0].value == '/':
+                    # slices / widths / slash *
+                    tokens.pop(0)
+                else:
+                    # slices / widths other
+                    continue
+            elif tokens and tokens[0].type == 'literal' and tokens[0].value == '/':
+                # slices / / *
+                tokens.pop(0)
+            else:
+                # slices / other
+                raise InvalidValues
+            if not tokens:
+                # slices / * /
+                raise InvalidValues
+            if border_image_outset(tokens[:1]):
+                outsets = [tokens.pop(0)]
+                while tokens and border_image_outset(outsets + tokens[:1]):
+                    outsets.append(tokens.pop(0))
+                yield '-outset', outsets
+            else:
+                # slash / * / other
+                raise InvalidValues
+        else:
+            raise InvalidValues
+
+
 @expander('background')
-def expand_background(name, tokens, base_url):
+def expand_background(tokens, name, base_url):
     """Expand the ``background`` shorthand property.
 
     See https://drafts.csswg.org/css-backgrounds-3/#the-background
 
     """
-    properties = [
-        'background_color', 'background_image', 'background_repeat',
-        'background_attachment', 'background_position', 'background_size',
-        'background_clip', 'background_origin']
+    expanded_names = (
+        'background-color', 'background-image', 'background-repeat',
+        'background-attachment', 'background-position', 'background-size',
+        'background-clip', 'background-origin')
     keyword = get_single_keyword(tokens)
     if keyword in ('initial', 'inherit'):
-        for name in properties:
+        for name in expanded_names:
             yield name, keyword
+        return
+
+    expander = functools.partial(
+        expand_background, name=name, base_url=base_url)
+    if result := _find_var(tokens, expander, expanded_names):
+        yield from result.items()
         return
 
     def parse_layer(tokens, final_layer=False):
@@ -265,7 +445,7 @@ def expand_background(name, tokens, base_url):
         def add(name, value):
             if value is None:
                 return False
-            name = f'background_{name}'
+            name = f'background-{name}'
             if name in results:
                 raise InvalidValues
             results[name] = value
@@ -321,15 +501,15 @@ def expand_background(name, tokens, base_url):
             raise InvalidValues
 
         color = results.pop(
-            'background_color', INITIAL_VALUES['background_color'])
-        for name in properties:
-            if name not in results:
-                results[name] = INITIAL_VALUES[name][0]
+            'background-color', INITIAL_VALUES['background_color'])
+        for name in expanded_names:
+            if name not in results and name != 'background-color':
+                results[name] = INITIAL_VALUES[name.replace('-', '_')][0]
         return color, results
 
     layers = reversed(split_on_comma(tokens))
     color, last_layer = parse_layer(next(layers), final_layer=True)
-    results = dict((k, [v]) for k, v in last_layer.items())
+    results = {key: [value] for key, value in last_layer.items()}
     for tokens in layers:
         _, layer = parse_layer(tokens)
         for name, value in layer.items():
@@ -341,7 +521,7 @@ def expand_background(name, tokens, base_url):
 
 @expander('text-decoration')
 @generic_expander('-line', '-color', '-style')
-def expand_text_decoration(name, tokens):
+def expand_text_decoration(tokens, name):
     """Expand the ``text-decoration`` shorthand property."""
     text_decoration_line = []
     text_decoration_color = []
@@ -379,7 +559,7 @@ def expand_text_decoration(name, tokens):
         yield '-style', text_decoration_style
 
 
-def expand_page_break_before_after(name, tokens):
+def expand_page_break_before_after(tokens, name):
     """Expand legacy ``page-break-before`` and ``page-break-after`` properties.
 
     See https://www.w3.org/TR/css-break-3/#page-break-properties
@@ -399,29 +579,29 @@ def expand_page_break_before_after(name, tokens):
 
 @expander('page-break-after')
 @generic_expander('break-after')
-def expand_page_break_after(name, tokens):
+def expand_page_break_after(tokens, name):
     """Expand legacy ``page-break-after`` property.
 
     See https://www.w3.org/TR/css-break-3/#page-break-properties
 
     """
-    return expand_page_break_before_after(name, tokens)
+    return expand_page_break_before_after(tokens, name)
 
 
 @expander('page-break-before')
 @generic_expander('break-before')
-def expand_page_break_before(name, tokens):
+def expand_page_break_before(tokens, name):
     """Expand legacy ``page-break-before`` property.
 
     See https://www.w3.org/TR/css-break-3/#page-break-properties
 
     """
-    return expand_page_break_before_after(name, tokens)
+    return expand_page_break_before_after(tokens, name)
 
 
 @expander('page-break-inside')
 @generic_expander('break-inside')
-def expand_page_break_inside(name, tokens):
+def expand_page_break_inside(tokens, name):
     """Expand the legacy ``page-break-inside`` property.
 
     See https://www.w3.org/TR/css-break-3/#page-break-properties
@@ -436,7 +616,7 @@ def expand_page_break_inside(name, tokens):
 
 @expander('columns')
 @generic_expander('column-width', 'column-count')
-def expand_columns(name, tokens):
+def expand_columns(tokens, name):
     """Expand the ``columns`` shorthand property."""
     name = None
     if len(tokens) == 2 and get_keyword(tokens[0]) == 'auto':
@@ -459,7 +639,7 @@ def expand_columns(name, tokens):
 @expander('font-variant')
 @generic_expander('-alternates', '-caps', '-east-asian', '-ligatures',
                   '-numeric', '-position')
-def font_variant(name, tokens):
+def font_variant(tokens, name):
     """Expand the ``font-variant`` shorthand property.
 
     https://www.w3.org/TR/css-fonts-3/#font-variant-prop
@@ -471,7 +651,7 @@ def font_variant(name, tokens):
 @expander('font')
 @generic_expander('-style', '-variant-caps', '-weight', '-stretch', '-size',
                   'line-height', '-family')  # line-height is not a suffix
-def expand_font(name, tokens):
+def expand_font(tokens, name):
     """Expand the ``font`` shorthand property.
 
     https://www.w3.org/TR/css-fonts-3/#font-prop
@@ -543,7 +723,7 @@ def expand_font(name, tokens):
 
 @expander('word-wrap')
 @generic_expander('overflow-wrap')
-def expand_word_wrap(name, tokens):
+def expand_word_wrap(tokens, name):
     """Expand the ``word-wrap`` legacy property.
 
     See https://www.w3.org/TR/css-text-3/#overflow-wrap
@@ -557,7 +737,7 @@ def expand_word_wrap(name, tokens):
 
 @expander('flex')
 @generic_expander('-grow', '-shrink', '-basis')
-def expand_flex(name, tokens):
+def expand_flex(tokens, name):
     """Expand the ``flex`` property."""
     keyword = get_single_keyword(tokens)
     if keyword == 'none':
@@ -615,7 +795,7 @@ def expand_flex(name, tokens):
 
 @expander('flex-flow')
 @generic_expander('flex-direction', 'flex-wrap')
-def expand_flex_flow(name, tokens):
+def expand_flex_flow(tokens, name):
     """Expand the ``flex-flow`` property."""
     if len(tokens) == 2:
         for sorted_tokens in tokens, tokens[::-1]:
@@ -641,9 +821,228 @@ def expand_flex_flow(name, tokens):
         raise InvalidValues
 
 
+def _expand_grid_template(tokens, name):
+    line, column = tokens[0].source_line, tokens[0].source_column
+    none = IdentToken(line, column, 'none')
+    if len(tokens) == 1 and get_keyword(tokens[0]) == 'none':
+        yield '-columns', [none]
+        yield '-rows', [none]
+        yield '-areas', [none]
+        return
+    slash_separated = [[]]
+    for token in tokens:
+        if token.type == 'literal' and token.value == '/':
+            slash_separated.append([])
+        else:
+            slash_separated[-1].append(token)
+    if len(slash_separated) == 2:
+        rows = grid_template(slash_separated[0])
+        columns = grid_template(slash_separated[1])
+        if columns:
+            if rows:
+                yield '-columns', slash_separated[1]
+                yield '-rows', slash_separated[0]
+                yield '-areas', [none]
+                return
+            columns = slash_separated[1]
+        else:
+            raise InvalidValues
+    elif len(slash_separated) == 1:
+        columns = [none]
+    else:
+        raise InvalidValues
+    # TODO: Handle last syntax.
+    raise InvalidValues
+
+
+@expander('grid-template')
+@generic_expander('-columns', '-rows', '-areas')
+def expand_grid_template(tokens, name):
+    """Expand the ``grid-template`` property."""
+    yield from _expand_grid_template(tokens, name)
+
+
+@expander('grid')
+@generic_expander('-template-columns', '-template-rows', '-template-areas',
+                  '-auto-columns', '-auto-rows', '-auto-flow')
+def expand_grid(tokens, name):
+    """Expand the ``grid`` property."""
+    line, column = tokens[0].source_line, tokens[0].source_column
+    auto = IdentToken(line, column, 'auto')
+    none = IdentToken(line, column, 'none')
+    row = IdentToken(line, column, 'row')
+    column = IdentToken(line, column, 'column')
+    try:
+        template = tuple(_expand_grid_template(tokens, 'grid-template'))
+    except InvalidValues:
+        pass
+    else:
+        for key, value in template:
+            yield f'-template-{key.split("-")[-1]}', value
+        yield '-auto-columns', [auto]
+        yield '-auto-rows', [auto]
+        yield '-auto-flow', [row]
+        return
+    split_tokens = [[]]
+    for token in tokens:
+        if token.type == 'literal' and token.value == '/':
+            split_tokens.append([])
+            continue
+        split_tokens[-1].append(token)
+    if len(split_tokens) != 2:
+        raise InvalidValues
+    auto_track = None
+    dense = None
+    templates = {'row': [], 'column': []}
+    iterable = zip(split_tokens, templates.items())
+    for tokens, (track, track_templates) in iterable:
+        auto_flow_token = False
+        for token in tokens:
+            if get_keyword(token) == 'dense':
+                if dense or (auto_track and auto_track != track):
+                    raise InvalidValues
+                dense = token
+                auto_track = track
+            elif get_keyword(token) == 'auto-flow':
+                if auto_flow_token or (auto_track and auto_track != track):
+                    raise InvalidValues
+                auto_flow_token = True
+                auto_track = track
+            elif token == tokens[-1]:
+                track_templates.append(token)
+            else:
+                raise InvalidValues
+    if not auto_track:
+        raise InvalidValues
+    non_auto_track = 'row' if auto_track == 'column' else 'column'
+    auto_track_token = column if auto_track == 'column' else row
+    yield '-auto-flow', (
+        (auto_track_token, dense) if dense else (auto_track_token,))
+    yield f'-auto-{auto_track}s', tuple(templates[auto_track])
+    yield f'-auto-{non_auto_track}s', [auto]
+    yield f'-template-{auto_track}s', [none]
+    yield f'-template-{non_auto_track}s', tuple(templates[non_auto_track])
+    yield '-template-areas', [none]
+
+
+def _expand_grid_column_row_area(tokens, max_number):
+    grid_lines = [[]]
+    for token in tokens:
+        if token.type == 'literal' and token.value == '/':
+            grid_lines.append([])
+            continue
+        grid_lines[-1].append(token)
+    if not 1 <= len(grid_lines) <= max_number:
+        raise InvalidValues
+    validations = []
+    for tokens in grid_lines:
+        if not (validation := grid_line(tokens)):
+            raise InvalidValues
+        validations.append(validation)
+        yield tuple(tokens)
+    auto = IdentToken(token.source_line, token.source_column, 'auto')
+    if (lines := len(grid_lines)) <= 1:
+        custom_ident = set(validations[0][:2]) == {None}
+        value = tuple(grid_lines[0]) if custom_ident else (auto,)
+        grid_lines.append(tokens)
+        validations.append(validations[0])
+        yield value
+    if lines <= 2 < max_number:
+        custom_ident = set(validations[0][:2]) == {None}
+        yield tuple(grid_lines[0]) if custom_ident else (auto,)
+    if lines <= 3 < max_number:
+        custom_ident = set(validations[1][:2]) == {None}
+        yield tuple(grid_lines[1]) if custom_ident else (auto,)
+
+
+@expander('grid-column')
+@expander('grid-row')
+@generic_expander('-start', '-end')
+def expand_grid_column_row(tokens, name):
+    """Expand the ``grid-[column|row]`` properties."""
+    tokens_list = _expand_grid_column_row_area(tokens, 2)
+    for tokens, side in zip(tokens_list, ('start', 'end')):
+        yield f'-{side}', tokens
+
+
+@expander('grid-area')
+@generic_expander('grid-row-start', 'grid-row-end',
+                  'grid-column-start', 'grid-column-end')
+def expand_grid_area(tokens, name):
+    """Expand the ``grid-area`` property."""
+    tokens_list = _expand_grid_column_row_area(tokens, 4)
+    sides = ('row-start', 'column-start', 'row-end', 'column-end')
+    for tokens, side in zip(tokens_list, sides):
+        yield f'grid-{side}', tokens
+
+
+@expander('grid-gap')
+@expander('gap')
+@generic_expander('column-gap', 'row-gap')
+def expand_gap(tokens, name):
+    """Expand the ``gap`` property."""
+    if len(tokens) == 1:
+        if gap(tokens) is None:
+            raise InvalidValues
+        yield 'row-gap', tokens
+        yield 'column-gap', tokens
+    elif len(tokens) == 2:
+        column_gap, row_gap = gap(tokens[0:1]), gap(tokens[1:2])
+        if None in (column_gap, row_gap):
+            raise InvalidValues
+        yield 'row-gap', tokens[0:1]
+        yield 'column-gap', tokens[1:2]
+    else:
+        raise InvalidValues
+
+
+@expander('grid-column-gap')
+@generic_expander('column-gap')
+def expand_legacy_column_gap(tokens, name):
+    """Expand legacy ``grid-column-gap`` property."""
+    keyword = gap(tokens)
+    if keyword is None:
+        raise InvalidValues
+    yield 'column-gap', tokens
+
+
+@expander('grid-row-gap')
+@generic_expander('row-gap')
+def expand_legacy_row_gap(tokens, name):
+    """Expand legacy ``grid-row-gap`` property."""
+    keyword = gap(tokens)
+    if keyword is None:
+        raise InvalidValues
+    yield 'row-gap', tokens
+
+
+@expander('place-content')
+@generic_expander('align-content', 'justify-content')
+def expand_place_content(tokens, name):
+    """Expand the ``place-content`` property."""
+    # TODO
+    raise InvalidValues
+
+
+@expander('place-items')
+@generic_expander('align-items', 'justify-items')
+def expand_place_items(tokens, name):
+    """Expand the ``place-items`` property."""
+    # TODO
+    raise InvalidValues
+
+
+@expander('place-self')
+@generic_expander('align-self', 'justify-self')
+def expand_place_self(tokens, name):
+    """Expand the ``place-self`` property."""
+    # TODO
+    raise InvalidValues
+
+
 @expander('line-clamp')
 @generic_expander('max-lines', 'continue', 'block-ellipsis')
-def expand_line_clamp(name, tokens):
+def expand_line_clamp(tokens, name):
     """Expand the ``line-clamp`` property."""
     if len(tokens) == 1:
         keyword = get_single_keyword(tokens)
@@ -683,7 +1082,7 @@ def expand_line_clamp(name, tokens):
 
 @expander('text-align')
 @generic_expander('-all', '-last')
-def expand_text_align(name, tokens):
+def expand_text_align(tokens, name):
     """Expand the ``text-align`` property."""
     if len(tokens) == 1:
         keyword = get_single_keyword(tokens)

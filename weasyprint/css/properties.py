@@ -7,6 +7,7 @@ from tinycss2.color3 import parse_color
 
 Dimension = collections.namedtuple('Dimension', ['value', 'unit'])
 
+ZERO_PIXELS = Dimension(0, 'px')
 
 INITIAL_VALUES = {
     # CSS 2.1: https://www.w3.org/TR/CSS21/propidx.html
@@ -21,14 +22,14 @@ INITIAL_VALUES = {
     'float': 'none',
     'left': 'auto',
     'line_height': 'normal',
-    'margin_top': Dimension(0, 'px'),
-    'margin_right': Dimension(0, 'px'),
-    'margin_bottom': Dimension(0, 'px'),
-    'margin_left': Dimension(0, 'px'),
-    'padding_top': Dimension(0, 'px'),
-    'padding_right': Dimension(0, 'px'),
-    'padding_bottom': Dimension(0, 'px'),
-    'padding_left': Dimension(0, 'px'),
+    'margin_top': ZERO_PIXELS,
+    'margin_right': ZERO_PIXELS,
+    'margin_bottom': ZERO_PIXELS,
+    'margin_left': ZERO_PIXELS,
+    'padding_top': ZERO_PIXELS,
+    'padding_right': ZERO_PIXELS,
+    'padding_bottom': ZERO_PIXELS,
+    'padding_left': ZERO_PIXELS,
     'position': 'static',
     'right': 'auto',
     'table_layout': 'auto',
@@ -49,8 +50,8 @@ INITIAL_VALUES = {
     'background_repeat': (('repeat', 'repeat'),),
     'background_size': (('auto', 'auto'),),
     'border_bottom_color': 'currentColor',
-    'border_bottom_left_radius': (Dimension(0, 'px'), Dimension(0, 'px')),
-    'border_bottom_right_radius': (Dimension(0, 'px'), Dimension(0, 'px')),
+    'border_bottom_left_radius': (ZERO_PIXELS, ZERO_PIXELS),
+    'border_bottom_right_radius': (ZERO_PIXELS, ZERO_PIXELS),
     'border_bottom_style': 'none',
     'border_bottom_width': 3,
     'border_collapse': 'separate',
@@ -62,10 +63,32 @@ INITIAL_VALUES = {
     'border_right_width': 3,
     'border_spacing': (0, 0),
     'border_top_color': 'currentColor',
-    'border_top_left_radius': (Dimension(0, 'px'), Dimension(0, 'px')),
-    'border_top_right_radius': (Dimension(0, 'px'), Dimension(0, 'px')),
+    'border_top_left_radius': (ZERO_PIXELS, ZERO_PIXELS),
+    'border_top_right_radius': (ZERO_PIXELS, ZERO_PIXELS),
     'border_top_style': 'none',
     'border_top_width': 3,  # computed value for 'medium'
+    'border_image_source': ('none', None),
+    'border_image_slice': (
+        Dimension(100, '%'), Dimension(100, '%'),
+        Dimension(100, '%'), Dimension(100, '%'),
+        None),
+    'border_image_width': (1, 1, 1, 1),
+    'border_image_outset': (
+        Dimension(0, None), Dimension(0, None),
+        Dimension(0, None), Dimension(0, None)),
+    'border_image_repeat': ('stretch', 'stretch'),
+    'mask_border_source': ('none', None),
+    'mask_border_slice': (
+        Dimension(100, '%'), Dimension(100, '%'),
+        Dimension(100, '%'), Dimension(100, '%'),
+        None),
+    'mask_border_width': ('auto', 'auto', 'auto', 'auto'),
+    'mask_border_outset': (
+        Dimension(0, None), Dimension(0, None),
+        Dimension(0, None), Dimension(0, None)),
+    'mask_border_repeat': ('stretch', 'stretch'),
+    'mask_border_mode': 'alpha',
+
 
     # Color 3 (REC): https://www.w3.org/TR/css-color-3/
     'opacity': 1,
@@ -73,7 +96,6 @@ INITIAL_VALUES = {
     # Multi-column Layout (WD): https://www.w3.org/TR/css-multicol-1/
     'column_width': 'auto',
     'column_count': 'auto',
-    'column_gap': Dimension(1, 'em'),
     'column_rule_color': 'currentColor',
     'column_rule_style': 'none',
     'column_rule_width': 'medium',
@@ -116,7 +138,7 @@ INITIAL_VALUES = {
     'content': 'normal',
     'footnote_display': 'block',
     'footnote_policy': 'auto',
-    'quotes': list('“”‘’'),  # chosen by the user agent
+    'quotes': 'auto',
     'string_set': 'none',
 
     # Images 3/4 (CR/WD): https://www.w3.org/TR/css-images-4/
@@ -139,13 +161,13 @@ INITIAL_VALUES = {
     # Text 3/4 (WD/WD): https://www.w3.org/TR/css-text-4/
     'hyphenate_character': '‐',  # computed value chosen by the user agent
     'hyphenate_limit_chars': (5, 2, 2),
-    'hyphenate_limit_zone': Dimension(0, 'px'),
+    'hyphenate_limit_zone': ZERO_PIXELS,
     'hyphens': 'manual',
     'letter_spacing': 'normal',
     'tab_size': 8,
     'text_align_all': 'start',
     'text_align_last': 'auto',
-    'text_indent': Dimension(0, 'px'),
+    'text_indent': ZERO_PIXELS,
     'text_transform': 'none',
     'white_space': 'normal',
     'word_break': 'normal',
@@ -171,16 +193,34 @@ INITIAL_VALUES = {
     'width': 'auto',
 
     # Flexible Box Layout Module 1 (CR): https://www.w3.org/TR/css-flexbox-1/
-    'align_content': 'stretch',
-    'align_items': 'stretch',
-    'align_self': 'auto',
     'flex_basis': 'auto',
     'flex_direction': 'row',
     'flex_grow': 0,
     'flex_shrink': 1,
     'flex_wrap': 'nowrap',
-    'justify_content': 'flex-start',
+
+    # Grid Layout Module Level 2 (CR): https://www.w3.org/TR/css-grid-2/
+    'grid_auto_columns': ('auto',),
+    'grid_auto_flow': ('row',),
+    'grid_auto_rows': ('auto',),
+    'grid_template_areas': 'none',
+    'grid_template_columns': 'none',
+    'grid_template_rows': 'none',
+    'grid_row_start': 'auto',
+    'grid_column_start': 'auto',
+    'grid_row_end': 'auto',
+    'grid_column_end': 'auto',
+
+    # CSS Box Alignment Module Level 3 (WD): https://www.w3.org/TR/css-align-3/
+    'align_content': ('normal',),
+    'align_items': ('normal',),
+    'align_self': ('auto',),
+    'justify_content': ('normal',),
+    'justify_items': ('normal',),
+    'justify_self': ('auto',),
     'order': 0,
+    'column_gap': 'normal',
+    'row_gap': 'normal',
 
     # Text Decoration Module 3 (CR): https://www.w3.org/TR/css-text-decor-3/
     'text_decoration_line': 'none',
@@ -284,7 +324,6 @@ TABLE_WRAPPER_BOX_PROPERTIES = {
     'bottom',
     'break_after',
     'break_before',
-    'break_inside',
     'clear',
     'counter_increment',
     'counter_reset',

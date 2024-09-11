@@ -4,13 +4,13 @@ from itertools import cycle
 from math import ceil, hypot
 
 from ..matrix import Matrix
-from .bounding_box import is_valid_bounding_box
-from .utils import color, parse_url, size, transform
+from .bounding_box import bounding_box, is_valid_bounding_box
+from .utils import alpha_value, color, parse_url, size, transform
 
 
 def use(svg, node, font_size):
     """Draw use tags."""
-    from . import NOT_INHERITED_ATTRIBUTES, SVG
+    from . import SVG
 
     x, y = svg.point(node.get('x'), node.get('y'), font_size)
 
@@ -49,17 +49,18 @@ def use(svg, node, font_size):
     if tree.tag in ('svg', 'symbol'):
         # Explicitely specified
         # https://www.w3.org/TR/SVG11/struct.html#UseElement
-        tree._etree_node.tag = 'svg'
         if 'width' in node.attrib and 'height' in node.attrib:
             tree.attrib['width'] = node.attrib['width']
             tree.attrib['height'] = node.attrib['height']
+        else:
+            tree._etree_node.tag = 'g'
+            box = bounding_box(svg, tree, font_size, stroke=True)
+            if is_valid_bounding_box(box):
+                tree.attrib['width'] = box[0] + box[2]
+                tree.attrib['height'] = box[1] + box[3]
+        tree._etree_node.tag = 'svg'
 
-    # Cascade
-    for key, value in node.attrib.items():
-        if key not in NOT_INHERITED_ATTRIBUTES:
-            if key not in tree.attrib:
-                tree.attrib[key] = value
-
+    node.cascade(tree)
     node.override_iter(iter((tree,)))
     svg.stream.transform(e=x, f=y)
 
@@ -83,7 +84,7 @@ def draw_gradient(svg, node, gradient, font_size, opacity, stroke):
         positions.append(max(
             positions[-1] if positions else 0,
             size(child.get('offset'), font_size, 1)))
-        stop_opacity = float(child.get('stop-opacity', 1)) * opacity
+        stop_opacity = alpha_value(child.get('stop-opacity', 1)) * opacity
         stop_color = color(child.get('stop-color', 'black'))
         if stop_opacity < 1:
             stop_color = tuple(
@@ -188,6 +189,14 @@ def draw_gradient(svg, node, gradient, font_size, opacity, stroke):
         bx2, by2 = transform_matrix.invert.transform_point(width, height)
         width, height = bx2 - bx1, by2 - by1
 
+        # Ensure that width and height are positive to please some PDF readers
+        if bx1 > bx2:
+            width = -width
+            bx1, bx2 = bx2, bx1
+        if by1 > by2:
+            height = -height
+            by1, by2 = by2, by1
+
     pattern = svg.stream.add_pattern(
         bx1, by1, width, height, width, height, matrix @ svg.stream.ctm)
     group = pattern.add_group(bx1, by1, width, height)
@@ -219,10 +228,10 @@ def draw_gradient(svg, node, gradient, font_size, opacity, stroke):
             shading_type, 'Gray', domain, coords, extend, function)
         alpha_stream.stream = [f'/{alpha_shading.id} sh']
 
-    group.shading(shading.id)
+    group.paint_shading(shading.id)
     pattern.set_alpha(1)
     pattern.draw_x_object(group.id)
-    svg.stream.color_space('Pattern', stroke=stroke)
+    svg.stream.set_color_space('Pattern', stroke=stroke)
     svg.stream.set_color_special(pattern.id, stroke=stroke)
     return True
 
@@ -249,17 +258,15 @@ def spread_linear_gradient(spread, positions, colors, x1, y1, x2, y2,
 
         # Create cycles used to add colors
         if spread == 'repeat':
-            next_steps = cycle([0] + position_steps)
+            next_steps = cycle((0, *position_steps))
             next_colors = cycle(colors)
-            previous_steps = cycle([0] + position_steps[::-1])
+            previous_steps = cycle((0, *position_steps[::-1]))
             previous_colors = cycle(colors[::-1])
         else:
             assert spread == 'reflect'
-            next_steps = cycle(
-                [0] + position_steps[::-1] + [0] + position_steps)
+            next_steps = cycle((0, *position_steps[::-1], 0, *position_steps))
             next_colors = cycle(colors[::-1] + colors)
-            previous_steps = cycle(
-                [0] + position_steps + [0] + position_steps[::-1])
+            previous_steps = cycle((0, *position_steps, 0, *position_steps[::-1]))
             previous_colors = cycle(colors + colors[::-1])
 
         # Normalize bounding box
@@ -402,8 +409,7 @@ def spread_radial_gradient(spread, positions, colors, fx, fy, fr, cx, cy, r,
                 new_positions = [
                     position - 1 - full_repeat for position
                     in original_positions[-(i - 1):]]
-                positions = (
-                    [ratio - 1 - full_repeat] + new_positions + positions)
+                positions = [ratio - 1 - full_repeat, *new_positions, *positions]
                 break
 
     coords = (fx, fy, fr, cx, cy, r)
@@ -456,7 +462,7 @@ def draw_pattern(svg, node, pattern, font_size, opacity, stroke):
         group, pattern_width, pattern_height, svg.base_url,
         svg.url_fetcher, svg.context)
     stream_pattern.draw_x_object(group.id)
-    svg.stream.color_space('Pattern', stroke=stroke)
+    svg.stream.set_color_space('Pattern', stroke=stroke)
     svg.stream.set_color_special(stream_pattern.id, stroke=stroke)
     return True
 

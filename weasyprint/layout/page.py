@@ -1,7 +1,6 @@
 """Layout for pages and CSS3 margin boxes."""
 
 import copy
-from itertools import chain
 from math import inf
 
 from ..css import PageType, computed_from_cascaded
@@ -605,7 +604,8 @@ def make_page(context, root_box, page_type, resume_at, page_number,
 
     # TODO: handle cases where the root element is something else.
     # See https://www.w3.org/TR/CSS21/visuren.html#dis-pos-flo
-    assert isinstance(root_box, (boxes.BlockBox, boxes.FlexContainerBox))
+    assert isinstance(root_box, (
+        boxes.BlockBox, boxes.FlexContainerBox, boxes.GridContainerBox))
     context.create_block_formatting_context()
     context.current_page = page_number
     context.current_page_footnotes = []
@@ -666,9 +666,6 @@ def make_page(context, root_box, page_type, resume_at, page_number,
     context.finish_block_formatting_context(root_box)
 
     page.children = [root_box, footnote_area]
-    descendants = chain(page.descendants(), *(
-        child.descendants() if hasattr(child, 'descendants') else (child,)
-        for child in positioned_boxes))
 
     # Update page counter values
     _standardize_page_based_counters(style, None)
@@ -692,7 +689,7 @@ def make_page(context, root_box, page_type, resume_at, page_number,
         cached_anchors.extend(x_remake_state.get('anchors', []))
         cached_lookups.extend(x_remake_state.get('content_lookups', []))
 
-    for child in descendants:
+    for child in page.descendants(placeholders=True):
         # Cache target's page counters
         anchor = child.style['anchor']
         if anchor and anchor not in cached_anchors:

@@ -7,11 +7,11 @@ This includes creating anonymous boxes and processing whitespace as necessary.
 import re
 import unicodedata
 
-import tinycss2.color3
-
 from .. import html
-from ..css import computed_values, properties, targets
+from ..css import properties, targets
+from ..layout.table import collapse_table_borders
 from ..logger import LOGGER
+from ..text.constants import get_lang_quotes
 from . import boxes
 
 # Maps values of the ``display`` CSS property to box types.
@@ -27,6 +27,9 @@ BOX_TYPE_FROM_DISPLAY = {
 
     ('block', 'flex'): boxes.FlexBox,
     ('inline', 'flex'): boxes.InlineFlexBox,
+
+    ('block', 'grid'): boxes.GridBox,
+    ('inline', 'grid'): boxes.InlineGridBox,
 
     ('table-row',): boxes.TableRowBox,
     ('table-row-group',): boxes.TableRowGroupBox,
@@ -51,6 +54,7 @@ def create_anonymous_boxes(box):
     """Create anonymous boxes in box descendants according to layout rules."""
     box = anonymous_table_boxes(box)
     box = flex_boxes(box)
+    box = grid_boxes(box)
     box = inline_in_block(box)
     box = block_in_inline(box)
     return box
@@ -219,7 +223,7 @@ def element_to_box(element, style_for, get_image_from_uri, base_url,
         if not counter_values[name]:
             counter_values.pop(name)
 
-    box.children = children if style['appearance'] == 'none' else []
+    box.children = children
     process_whitespace(box)
     set_content_lists(
         element, box, style, counter_values, target_collector, counter_style)
@@ -292,9 +296,7 @@ def before_after_to_box(element, pseudo_type, state, style_for,
     box.children = children
 
     # calculate the bookmark-label
-    if style['bookmark_label'] == 'none':
-        box.bookmark_label = ''
-    else:
+    if style['bookmark_level'] != 'none':
         _quote_depth, counter_values, _counter_scopes = state
         compute_bookmark_label(
             element, box, style['bookmark_label'], counter_values,
@@ -343,11 +345,10 @@ def marker_to_box(element, state, parent_style, style_for, get_image_from_uri,
             counter_value = counter_values.get('list-item', [0])[-1]
             counter_type = style['list_style_type']
             # TODO: rtl numbered list has the dot on the left
-            marker_text = counter_style.render_marker(
-                counter_type, counter_value)
-            box = boxes.TextBox.anonymous_from(box, marker_text)
-            box.style['white_space'] = 'pre-wrap'
-            children.append(box)
+            if marker_text := counter_style.render_marker(counter_type, counter_value):
+                box = boxes.TextBox.anonymous_from(box, marker_text)
+                box.style['white_space'] = 'pre-wrap'
+                children.append(box)
 
     if not children:
         return
@@ -361,7 +362,7 @@ def marker_to_box(element, state, parent_style, style_for, get_image_from_uri,
             translate_x = properties.Dimension(-100, '%')
         else:
             translate_x = properties.Dimension(100, '%')
-        translate_y = computed_values.ZERO_PIXELS
+        translate_y = properties.ZERO_PIXELS
         marker_box.style['transform'] = (
             ('translate', (translate_x, translate_y)),)
     else:
@@ -372,7 +373,7 @@ def marker_to_box(element, state, parent_style, style_for, get_image_from_uri,
 def compute_content_list(content_list, parent_box, counter_values, css_token,
                          parse_again, target_collector, counter_style,
                          get_image_from_uri=None, quote_depth=None,
-                         quote_style=None, context=None, page=None,
+                         quote_style=None, lang=None, context=None, page=None,
                          element=None):
     """Compute and return the boxes corresponding to the ``content_list``.
 
@@ -504,11 +505,14 @@ def compute_content_list(content_list, parent_box, counter_values, css_token,
                 break
         elif type_ == 'quote' and None not in (quote_depth, quote_style):
             is_open = 'open' in value
-            insert = not value.startswith('no-')
+            insert = not value.startswith('no-') and quote_style != 'none'
             if not is_open:
                 quote_depth[0] = max(0, quote_depth[0] - 1)
             if insert:
-                open_quotes, close_quotes = quote_style
+                if quote_style == 'auto':
+                    open_quotes, close_quotes = get_lang_quotes(lang)
+                else:
+                    open_quotes, close_quotes = quote_style
                 quotes = open_quotes if is_open else close_quotes
                 add_text(quotes[min(quote_depth[0], len(quotes) - 1)])
             if is_open:
@@ -592,7 +596,7 @@ def content_to_boxes(style, parent_box, quote_depth, counter_values,
     box_list = compute_content_list(
         style['content'], parent_box, counter_values, css_token, parse_again,
         target_collector, counter_style, get_image_from_uri, quote_depth,
-        style['quotes'], context, page)
+        style['quotes'], style['lang'], context, page)
     return box_list or []
 
 
@@ -669,9 +673,7 @@ def set_content_lists(element, box, style, counter_values, target_collector,
             compute_string_set(
                 element, box, string_name, string_values, counter_values,
                 target_collector, counter_style)
-    if style['bookmark_label'] == 'none':
-        box.bookmark_label = ''
-    else:
+    if style['bookmark_level'] != 'none':
         compute_bookmark_label(
             element, box, style['bookmark_label'], counter_values,
             target_collector, counter_style)
@@ -975,6 +977,7 @@ def wrap_table(box, children):
         grid_height += len(group.children)
 
     table = box.copy_with_children(row_groups)
+    table.style = table.style.copy()
     table.column_groups = tuple(column_groups)
     if table.style['border_collapse'] == 'collapse':
         table.collapsed_border_grid = collapse_table_borders(
@@ -997,161 +1000,6 @@ def wrap_table(box, children):
         table.style[name] = properties.INITIAL_VALUES[name]
 
     return wrapper
-
-
-TRANSPARENT = tinycss2.color3.parse_color('transparent')
-
-
-def collapse_table_borders(table, grid_width, grid_height):
-    """Resolve border conflicts for a table in the collapsing border model.
-
-    Take a :class:`TableBox`; set appropriate border widths on the table,
-    column group, column, row group, row, and cell boxes; and return
-    a data structure for the resolved collapsed border grid.
-
-    """
-    if not (grid_width and grid_height):
-        # Don’t bother with empty tables
-        return [], []
-
-    style_scores = dict((v, i) for i, v in enumerate(reversed([
-        'hidden', 'double', 'solid', 'dashed', 'dotted', 'ridge',
-        'outset', 'groove', 'inset', 'none'])))
-    style_map = {'inset': 'ridge', 'outset': 'groove'}
-    weak_null_border = (
-        (0, 0, style_scores['none']), ('none', 0, TRANSPARENT))
-    vertical_borders = [[weak_null_border for x in range(grid_width + 1)]
-                        for y in range(grid_height)]
-    horizontal_borders = [[weak_null_border for x in range(grid_width)]
-                          for y in range(grid_height + 1)]
-
-    def set_one_border(border_grid, box_style, side, grid_x, grid_y):
-        from ..draw import get_color
-
-        style = box_style[f'border_{side}_style']
-        width = box_style[f'border_{side}_width']
-        color = get_color(box_style, f'border_{side}_color')
-
-        # https://www.w3.org/TR/CSS21/tables.html#border-conflict-resolution
-        score = ((1 if style == 'hidden' else 0), width, style_scores[style])
-
-        style = style_map.get(style, style)
-        previous_score, _ = border_grid[grid_y][grid_x]
-        # Strict < so that the earlier call wins in case of a tie.
-        if previous_score < score:
-            border_grid[grid_y][grid_x] = (score, (style, width, color))
-
-    def set_borders(box, x, y, w, h):
-        style = box.style
-        for yy in range(y, y + h):
-            set_one_border(vertical_borders, style, 'left', x, yy)
-            set_one_border(vertical_borders, style, 'right', x + w, yy)
-        for xx in range(x, x + w):
-            set_one_border(horizontal_borders, style, 'top', xx, y)
-            set_one_border(horizontal_borders, style, 'bottom', xx, y + h)
-
-    # The order is important here:
-    # "A style set on a cell wins over one on a row, which wins over a
-    #  row group, column, column group and, lastly, table"
-    # See https://www.w3.org/TR/CSS21/tables.html#border-conflict-resolution
-    strong_null_border = (
-        (1, 0, style_scores['hidden']), ('hidden', 0, TRANSPARENT))
-    grid_y = 0
-    for row_group in table.children:
-        for row in row_group.children:
-            for cell in row.children:
-                # No border inside of a cell with rowspan or colspan
-                for xx in range(cell.grid_x + 1, cell.grid_x + cell.colspan):
-                    for yy in range(grid_y, grid_y + cell.rowspan):
-                        vertical_borders[yy][xx] = strong_null_border
-                for xx in range(cell.grid_x, cell.grid_x + cell.colspan):
-                    for yy in range(grid_y + 1, grid_y + cell.rowspan):
-                        horizontal_borders[yy][xx] = strong_null_border
-                # The cell’s own borders
-                set_borders(cell, x=cell.grid_x, y=grid_y,
-                            w=cell.colspan, h=cell.rowspan)
-            grid_y += 1
-
-    grid_y = 0
-    for row_group in table.children:
-        for row in row_group.children:
-            set_borders(row, x=0, y=grid_y, w=grid_width, h=1)
-            grid_y += 1
-
-    grid_y = 0
-    for row_group in table.children:
-        rowspan = len(row_group.children)
-        set_borders(row_group, x=0, y=grid_y, w=grid_width, h=rowspan)
-        grid_y += rowspan
-
-    for column_group in table.column_groups:
-        for column in column_group.children:
-            set_borders(column, x=column.grid_x, y=0, w=1, h=grid_height)
-
-    for column_group in table.column_groups:
-        set_borders(column_group, x=column_group.grid_x, y=0,
-                    w=column_group.span, h=grid_height)
-
-    set_borders(table, x=0, y=0, w=grid_width, h=grid_height)
-
-    # Now that all conflicts are resolved, set transparent borders of
-    # the correct widths on each box. The actual border grid will be
-    # painted separately.
-    def set_transparent_border(box, side, twice_width):
-        box.style[f'border_{side}_style'] = 'solid'
-        box.style[f'border_{side}_width'] = twice_width / 2
-        box.style[f'border_{side}_color'] = TRANSPARENT
-
-    def remove_borders(box):
-        set_transparent_border(box, 'top', 0)
-        set_transparent_border(box, 'right', 0)
-        set_transparent_border(box, 'bottom', 0)
-        set_transparent_border(box, 'left', 0)
-
-    def max_vertical_width(x, y, h):
-        return max(
-            width for grid_row in vertical_borders[y:y + h]
-            for _, (_, width, _) in [grid_row[x]])
-
-    def max_horizontal_width(x, y, w):
-        return max(
-            width for _, (_, width, _) in horizontal_borders[y][x:x + w])
-
-    grid_y = 0
-    for row_group in table.children:
-        remove_borders(row_group)
-        for row in row_group.children:
-            remove_borders(row)
-            for cell in row.children:
-                set_transparent_border(cell, 'top', max_horizontal_width(
-                    x=cell.grid_x, y=grid_y, w=cell.colspan))
-                set_transparent_border(cell, 'bottom', max_horizontal_width(
-                    x=cell.grid_x, y=grid_y + cell.rowspan, w=cell.colspan))
-                set_transparent_border(cell, 'left', max_vertical_width(
-                    x=cell.grid_x, y=grid_y, h=cell.rowspan))
-                set_transparent_border(cell, 'right', max_vertical_width(
-                    x=cell.grid_x + cell.colspan, y=grid_y, h=cell.rowspan))
-            grid_y += 1
-
-    for column_group in table.column_groups:
-        remove_borders(column_group)
-        for column in column_group.children:
-            remove_borders(column)
-
-    set_transparent_border(table, 'top', max_horizontal_width(
-        x=0, y=0, w=grid_width))
-    set_transparent_border(table, 'bottom', max_horizontal_width(
-        x=0, y=grid_height, w=grid_width))
-    # "UAs must compute an initial left and right border width for the table
-    #  by examining the first and last cells in the first row of the table."
-    # https://www.w3.org/TR/CSS21/tables.html#collapsing-borders
-    # ... so h=1, not grid_height:
-    set_transparent_border(table, 'left', max_vertical_width(
-        x=0, y=0, h=1))
-    set_transparent_border(table, 'right', max_vertical_width(
-        x=grid_width, y=0, h=1))
-
-    return vertical_borders, horizontal_borders
 
 
 def flex_boxes(box):
@@ -1189,6 +1037,47 @@ def flex_children(box, children):
             else:
                 flex_children.append(child)
         return flex_children
+    else:
+        return children
+
+
+def grid_boxes(box):
+    """Remove and add boxes according to the grid model.
+
+    Take and return a ``Box`` object.
+
+    See https://drafts.csswg.org/css-grid-2/#grid-item
+
+    """
+    if not isinstance(box, boxes.ParentBox) or box.is_running():
+        return box
+
+    # Do recursion.
+    children = [grid_boxes(child) for child in box.children]
+    box.children = grid_children(box, children)
+    return box
+
+
+def grid_children(box, children):
+    if isinstance(box, boxes.GridContainerBox):
+        grid_children = []
+        for child in children:
+            if not child.is_absolutely_positioned():
+                child.is_grid_item = True
+            if isinstance(child, boxes.TextBox) and not child.text.strip(' '):
+                # TODO: ignore texts only containing "characters that can be
+                # affected by the white-space property"
+                # https://drafts.csswg.org/css-grid-2/#grid-item
+                continue
+            if isinstance(child, boxes.InlineLevelBox):
+                anonymous = boxes.BlockBox.anonymous_from(child, [child])
+                anonymous.style = child.style
+                child.is_grid_item = False
+                anonymous.is_grid_item = True
+                grid_children.append(anonymous)
+            else:
+                grid_children.append(child)
+        return grid_children
     else:
         return children
 
@@ -1234,7 +1123,7 @@ def process_whitespace(box, following_collapsible_space=False):
 
         box.text = text
 
-    elif isinstance(box, boxes.ParentBox):
+    else:
         for child in box.children:
             if isinstance(child, (boxes.TextBox, boxes.InlineBox)):
                 child_collapsible_space = process_whitespace(
@@ -1260,7 +1149,7 @@ def process_text_transform(box):
         if box.style['hyphens'] == 'none':
             box.text = box.text.replace('\u00AD', '')  # U+00AD is soft hyphen
 
-    elif isinstance(box, boxes.ParentBox) and not box.is_running():
+    elif not box.is_running():
         for child in box.children:
             if isinstance(child, (boxes.TextBox, boxes.InlineBox)):
                 process_text_transform(child)
@@ -1319,7 +1208,7 @@ def inline_in_block(box):
         ]
 
     """
-    if not isinstance(box, boxes.ParentBox) or box.is_running():
+    if not box.children or box.is_running():
         return box
 
     box_children = list(box.children)
@@ -1454,7 +1343,7 @@ def block_in_inline(box):
         ]
 
     """
-    if not isinstance(box, boxes.ParentBox) or box.is_running():
+    if not box.children or box.is_running():
         return box
 
     new_children = []

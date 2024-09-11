@@ -6,6 +6,8 @@ importing sub-modules.
 """
 
 import contextlib
+from datetime import datetime
+from os.path import getctime, getmtime
 from pathlib import Path
 from urllib.parse import urljoin
 
@@ -13,7 +15,7 @@ import cssselect2
 import html5lib
 import tinycss2
 
-VERSION = __version__ = '60.2'
+VERSION = __version__ = '62.3'
 
 #: Default values for command-line and Python API options. See
 #: :func:`__main__.main` to learn more about specific options for
@@ -43,6 +45,9 @@ VERSION = __version__ = '60.2'
 #:     Whether custom HTML metadata should be stored in the generated PDF.
 #: :param bool presentational_hints:
 #:     Whether HTML presentational hints are followed.
+#: :param bool srgb:
+#:     Whether sRGB color profile should be included and set as default for
+#:     device-dependant RGB colors.
 #: :param bool optimize_images:
 #:     Whether size of embedded images should be optimized, with no quality
 #:     loss.
@@ -69,6 +74,7 @@ DEFAULT_OPTIONS = {
     'uncompressed_pdf': False,
     'custom_metadata': False,
     'presentational_hints': False,
+    'srgb': False,
     'optimize_images': False,
     'jpeg_quality': None,
     'dpi': None,
@@ -83,9 +89,9 @@ __all__ = [
 
 
 # Import after setting the version, as the version is used in other modules
-from .urls import (  # noqa isort:skip
+from .urls import (  # noqa: I001, E402
     fetch, default_url_fetcher, path2url, ensure_url, url_is_absolute)
-from .logger import LOGGER, PROGRESS_LOGGER  # noqa isort:skip
+from .logger import LOGGER, PROGRESS_LOGGER  # noqa: E402
 # Some imports are at the end of the file (after the CSS class)
 # to work around circular imports.
 
@@ -133,7 +139,8 @@ class HTML:
 
     :param str encoding:
         Force the source character encoding.
-    :param str base_url:
+    :type base_url: str or pathlib.Path
+    :param base_url:
         The base used to resolve relative URLs (e.g. in
         ``<img src="../foo.png">``). If not provided, try to use the input
         filename, URL, or ``name`` attribute of
@@ -156,16 +163,20 @@ class HTML:
             'Step 1 - Fetching and parsing HTML - %s',
             guess or filename or url or
             getattr(file_obj, 'name', 'HTML string'))
+        if isinstance(base_url, Path):
+            base_url = str(base_url)
         result = _select_source(
             guess, filename, url, file_obj, string, base_url, url_fetcher)
         with result as (source_type, source, base_url, protocol_encoding):
             if isinstance(source, str):
                 result = html5lib.parse(source, namespaceHTMLElements=False)
             else:
-                result = html5lib.parse(
-                    source, override_encoding=encoding,
-                    transport_encoding=protocol_encoding,
-                    namespaceHTMLElements=False)
+                kwargs = {'namespaceHTMLElements': False}
+                if protocol_encoding is not None:
+                    kwargs['transport_encoding'] = protocol_encoding
+                if encoding is not None:
+                    kwargs['override_encoding'] = encoding
+                result = html5lib.parse(source, **kwargs)
         self.base_url = _find_base_url(result, base_url)
         self.url_fetcher = url_fetcher
         self.media_type = media_type
@@ -203,6 +214,8 @@ class HTML:
         :returns: A :class:`document.Document` object.
 
         """
+        for unknown in set(options) - set(DEFAULT_OPTIONS):
+            LOGGER.warning('Unknown rendering option: %s.', unknown)
         new_options = DEFAULT_OPTIONS.copy()
         new_options.update(options)
         options = new_options
@@ -281,12 +294,12 @@ class CSS:
             base_url=base_url, url_fetcher=url_fetcher,
             check_css_mime_type=_check_mime_type)
         with result as (source_type, source, base_url, protocol_encoding):
-            if source_type == 'string' and not isinstance(source, bytes):
+            if source_type == 'file_obj':
+                source = source.read()
+            if isinstance(source, str):
                 # unicode, no encoding
                 stylesheet = tinycss2.parse_stylesheet(source)
             else:
-                if source_type == 'file_obj':
-                    source = source.read()
                 stylesheet, encoding = tinycss2.parse_stylesheet_bytes(
                     source, environment_encoding=encoding,
                     protocol_encoding=protocol_encoding)
@@ -303,21 +316,46 @@ class Attachment:
 
     An instance is created in the same way as :class:`HTML`, except that the
     HTML specific arguments (``encoding`` and ``media_type``) are not
-    supported. An optional description can be provided with the ``description``
-    argument.
+    supported.
 
-    :param description:
+    :param str description:
         A description of the attachment to be included in the PDF document.
         May be :obj:`None`.
+    :type created: :obj:`datetime.datetime`
+    :param created:
+        Creation date and time. Default is current date and time.
+    :type modified: :obj:`datetime.datetime`
+    :param modified:
+        Modification date and time. Default is current date and time.
+    :param str relationship:
+        A string that represents the relationship between the attachment and
+        the PDF it is embedded in. Default is 'Unspecified', other common
+        values are defined in ISO-32000-2:2020, 7.11.3.
 
     """
     def __init__(self, guess=None, filename=None, url=None, file_obj=None,
                  string=None, base_url=None, url_fetcher=default_url_fetcher,
-                 description=None):
+                 description=None, created=None, modified=None,
+                 relationship='Unspecified'):
         self.source = _select_source(
             guess, filename, url, file_obj, string, base_url=base_url,
             url_fetcher=url_fetcher)
         self.description = description
+        self.relationship = relationship
+        self.md5 = None
+
+        if created is None:
+            if filename:
+                created = datetime.fromtimestamp(getctime(filename))
+            else:
+                created = datetime.now()
+        if modified is None:
+            if filename:
+                modified = datetime.fromtimestamp(getmtime(filename))
+            else:
+                modified = datetime.now()
+        self.created = created
+        self.modified = modified
 
 
 @contextlib.contextmanager
@@ -384,8 +422,8 @@ def _select_source(guess=None, filename=None, url=None, file_obj=None,
         yield 'string', string, base_url, None
 
 # Work around circular imports.
-from .css import preprocess_stylesheet  # noqa isort:skip
-from .html import (  # noqa isort:skip
+from .css import preprocess_stylesheet  # noqa: I001, E402
+from .html import (  # noqa: E402
     HTML5_UA_COUNTER_STYLE, HTML5_UA_STYLESHEET, HTML5_UA_FORM_STYLESHEET,
     HTML5_PH_STYLESHEET)
-from .document import Document, Page  # noqa isort:skip
+from .document import Document, Page  # noqa: E402

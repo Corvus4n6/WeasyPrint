@@ -2,7 +2,23 @@
 
 import pytest
 
-from ..testing_utils import assert_no_logs, capture_logs, render_pages
+from weasyprint.formatting_structure import boxes
+from weasyprint.layout.table import collapse_table_borders
+
+from ..testing_utils import assert_no_logs, capture_logs, parse_all, render_pages
+
+
+def _get_grid(html, grid_width, grid_height):
+    html = parse_all(html)
+    body, = html.children
+    table_wrapper, = body.children
+    table, = table_wrapper.children
+    border_lists = collapse_table_borders(table, grid_width, grid_height)
+    return tuple(
+        [[(style, width, color) if width else None
+          for _score, (style, width, color) in border]
+         for border in border_list]
+        for border_list in border_lists)
 
 
 @assert_no_logs
@@ -374,10 +390,6 @@ def test_layout_table_auto_4():
 @assert_no_logs
 def test_layout_table_auto_5():
     page, = render_pages('''
-      <style>
-        @font-face { src: url(weasyprint.otf); font-family: weasyprint }
-        * { font-family: weasyprint }
-      </style>
       <table style="width: 1000px; font-family: weasyprint">
         <tr>
           <td style="width: 40px">aa aa aa aa</td>
@@ -499,7 +511,7 @@ def test_layout_table_auto_8():
 @assert_no_logs
 def test_layout_table_auto_9():
     page, = render_pages('''
-      <table style="border-spacing: 10px; width: 110px; margin: 5px">
+      <table style="border-spacing: 10px; width: 120px; margin: 5px">
         <tr>
           <td style="width: 60px"></td>
           <td></td>
@@ -1097,8 +1109,8 @@ def test_layout_table_auto_31():
 def test_layout_table_auto_32():
     # Table with a cell larger than the table's width
     page, = render_pages('''
-      <table style="width: 300px; margin: 100px">
-        <td style="width: 400px"></td>
+      <table style="width: 400px; margin: 100px">
+        <td style="width: 500px"></td>
       </table>
     ''')
     html, = page.children
@@ -1235,9 +1247,6 @@ def test_layout_table_auto_40():
     # Test regression: https://github.com/Kozea/WeasyPrint/issues/368
     # Check that white-space is used for the shrink-to-fit algorithm
     page, = render_pages('''
-      <style>
-        @font-face { src: url(weasyprint.otf); font-family: weasyprint }
-      </style>
       <table style="width: 0">
         <td style="font-family: weasyprint; white-space: nowrap">a a</td>
       </table>
@@ -1282,11 +1291,11 @@ def test_layout_table_auto_41():
 def test_layout_table_auto_42():
     # Cell width as percentage in auto-width table
     page, = render_pages('''
-      <table>
+      <table style="font-family: weasyprint">
         <tbody>
             <tr>
-              <td style="width: 70px">a a a a a a a a</td>
-              <td style="width: 30%">a a a a a a a a</td>
+              <td style="width: 70px">aaa</td>
+              <td style="width: 25%">aaa</td>
             </tr>
         </tbody>
       </table>
@@ -1298,9 +1307,9 @@ def test_layout_table_auto_42():
     row_group, = table.children
     row, = row_group.children
     td_1, td_2 = row.children
-    assert td_1.width == 70
-    assert td_2.width == 30
-    assert table.width == 100
+    assert td_2.width == 16 * 3  # Percentage column is set to max-width
+    assert td_1.width == (16 * 3) * 3  # Pixel column constraint is ignored
+    assert table.width == (16 * 3) * 4
 
 
 @assert_no_logs
@@ -1441,9 +1450,6 @@ def test_layout_table_auto_47():
     # Test regression:
     # https://github.com/Kozea/WeasyPrint/issues/666
     page, = render_pages('''
-      <style>
-        @font-face { src: url(weasyprint.otf); font-family: weasyprint }
-      </style>
       <table style="font-family: weasyprint">
         <tr>
           <td colspan=5>aaa</td>
@@ -1465,9 +1471,6 @@ def test_layout_table_auto_48():
     # Related to:
     # https://github.com/Kozea/WeasyPrint/issues/685
     page, = render_pages('''
-      <style>
-        @font-face { src: url(weasyprint.otf); font-family: weasyprint }
-      </style>
       <table style="font-family: weasyprint; border-spacing: 100px;
                     border-collapse: collapse">
         <tr>
@@ -1492,9 +1495,6 @@ def test_layout_table_auto_49():
     # https://github.com/Kozea/WeasyPrint/issues/685
     # See TODO in table_layout.group_layout
     page, = render_pages('''
-      <style>
-        @font-face { src: url(weasyprint.otf); font-family: weasyprint }
-      </style>
       <table style="font-family: weasyprint; border-spacing: 100px">
         <tr>
           <td colspan=5>aaa</td>
@@ -1516,9 +1516,6 @@ def test_layout_table_auto_50():
     # Test regression:
     # https://github.com/Kozea/WeasyPrint/issues/685
     page, = render_pages('''
-      <style>
-        @font-face { src: url(weasyprint.otf); font-family: weasyprint }
-      </style>
       <table style="font-family: weasyprint; border-spacing: 5px">
        <tr><td>a</td><td>a</td><td>a</td><td>a</td><td>a</td></tr>
        <tr>
@@ -1536,6 +1533,29 @@ def test_layout_table_auto_50():
         assert td.width == 44  # (15 * font_size - 4 * sp) / 5
     td_21, = row_2.children
     assert td_21.width == 240  # 15 * font_size
+
+
+@assert_no_logs
+def test_layout_table_auto_51():
+    # Test regression:
+    # https://github.com/Kozea/WeasyPrint/issues/2174
+    page, = render_pages('''
+      <table style="font-family: weasyprint; width: 100px">
+        <tr>
+          <td style="width: 29.9999%">a</td>
+          <td style="width: 70%">a</td>
+        </tr>
+      </table>
+    ''')
+    html, = page.children
+    body, = html.children
+    table_wrapper, = body.children
+    table, = table_wrapper.children
+    row_group, = table.children
+    row_1, = row_group.children
+    td_1, td_2 = row_1.children
+    assert abs(td_1.width - 30) < 0.1
+    assert abs(td_2.width - 70) < 0.1
 
 
 @assert_no_logs
@@ -1844,9 +1864,6 @@ def test_table_row_height_2():
 def test_table_row_height_3():
     # Test regression: https://github.com/Kozea/WeasyPrint/issues/937
     page, = render_pages('''
-      <style>
-        @font-face { src: url(weasyprint.otf); font-family: weasyprint }
-      </style>
       <table style="border-spacing: 0; font-family: weasyprint;
                     line-height: 20px">
         <tr><td>Table</td><td rowspan="2"></td></tr>
@@ -1866,6 +1883,24 @@ def test_table_row_height_3():
 
 
 @assert_no_logs
+def test_table_row_height_4():
+    # A row cannot be shorter than the border-height of its tallest cell
+    page, = render_pages('''
+      <table style="border-spacing: 0;">
+        <tr style="height: 4px;">
+          <td style="border: 1px solid; padding: 5px;"></td>
+        </tr>
+      </table>
+    ''')
+    html, = page.children
+    body, = html.children
+    wrapper, = body.children
+    table, = wrapper.children
+    row_group, = table.children
+    assert row_group.height == 12
+
+
+@assert_no_logs
 def test_table_vertical_align(assert_pixels):
     assert_pixels('''
         rrrrrrrrrrrrrrrrrrrrrrrrrrrr
@@ -1880,7 +1915,6 @@ def test_table_vertical_align(assert_pixels):
         rrrrrrrrrrrrrrrrrrrrrrrrrrrr
     ''', '''
       <style>
-        @font-face { src: url(weasyprint.otf); font-family: weasyprint }
         @page { size: 28px 10px }
         html { font-size: 1px; color: red }
         body { margin: 0; width: 28px; height: 10px }
@@ -1927,7 +1961,39 @@ def test_table_vertical_align(assert_pixels):
           </td>
         </tr>
       </table>
-    ''')  # noqa
+    ''')
+
+
+@assert_no_logs
+def test_table_vertical_align_float():
+    # Test regression: https://github.com/Kozea/WeasyPrint/issues/2216
+    page, = render_pages('''
+      <style>
+        @page { size: 100px }
+        td { width: 50px; height: 100px }
+        div { width: 25px; height: 20px }
+      </style>
+      <table>
+        <tr>
+          <td style="vertical-align: middle"><div style="float: left"></div></td>
+          <td style="vertical-align: bottom"><div style="float: right"></div></td>
+        </tr>
+      </table>
+    ''')
+    html, = page.children
+    body, = html.children
+    wrapper, = body.children
+    table, = wrapper.children
+    table, = wrapper.children
+    row_group, = table.children
+    row, = row_group.children
+    td_1, td_2 = row.children
+    div, = td_1.children
+    assert div.position_x == 0
+    assert div.position_y == 40  # (100 - 20) / 2
+    div, = td_2.children
+    assert div.position_x == 75
+    assert div.position_y == 80  # 100 - 20
 
 
 @assert_no_logs
@@ -2109,6 +2175,39 @@ def test_table_page_breaks(html, rows, positions):
 
     assert rows_per_page == rows
     assert rows_position_y == positions
+
+
+@assert_no_logs
+def test_table_page_breaks_in_cell():
+    page1, page2 = render_pages('''
+      <style>
+        @page { size: 120px }
+        h1 { height: 30px}
+        td { line-height: 40px }
+        table { table-layout: fixed; width: 100% }
+      </style>
+      <h1>Dummy title</h1>
+      <table>
+        <tr><td>r1c1l1</td><td>r1c2l1</td></tr>
+        <tr><td>r2c1l1</td><td style="break-inside: avoid">r2c2l1<br>r2c2l2</td></tr>
+        <tr><td>r3c1l1</td><td>r3l1</td></tr>
+      </table>
+    ''')
+    html, = page1.children
+    body, = html.children
+    h1, table_wrapper = body.children
+    table, = table_wrapper.children
+    group, = table.children
+    row, = group.children
+    assert len(row.children) == 2
+
+    html, = page2.children
+    body, = html.children
+    table_wrapper, = body.children
+    table, = table_wrapper.children
+    group, = table.children
+    row1, row2 = group.children
+    assert len(row1.children) == len(row2.children) == 2
 
 
 @assert_no_logs
@@ -2630,9 +2729,6 @@ def test_inline_table_baseline(vertical_align, table_position_y):
     # bottom of the row. The first cell's text is aligned with the div's text,
     # and the top of the table is thus 8px above the baseline.
     page, = render_pages('''
-      <style>
-        @font-face { src: url(weasyprint.otf); font-family: weasyprint }
-      </style>
       <div style="font-family: weasyprint; font-size: 10px; line-height: 30px">
         abc
         <table style="display: inline-table; border-collapse: collapse;
@@ -2764,6 +2860,100 @@ def test_table_empty_body(rows_expected, thead, tfoot, content):
                 text, = line.children
                 rows.append(text.text)
         assert rows == rows_expected[i]
+
+
+def test_table_group_break_inside_avoid_absolute():
+    # Test regression: https://github.com/Kozea/WeasyPrint/issues/2134
+    html = '''
+      <style>
+        @page { size: 5cm }
+        tbody { break-inside: avoid; line-height: 2cm }
+        div { position: absolute }
+      </style>
+      <table>
+        <tbody><tr><td>a</td></tr></tbody>
+        <tbody><tr>
+          <td><div>a<br>b</div></td>
+          <td>a<br>b</td>
+        </tr></tbody>
+      </table>
+    '''
+    page1, page2 = render_pages(html)
+
+    html, = page1.children
+    body, = html.children
+    table_wrapper, = body.children
+    table, = table_wrapper.children
+    group, = table.children  # Only first group
+
+    html, = page2.children
+    body, = html.children  # No absolute div here
+    table_wrapper, = body.children
+    table, = table_wrapper.children
+    group, = table.children  # Only second group
+
+
+def test_table_row_break_inside_avoid_absolute():
+    # Test regression: https://github.com/Kozea/WeasyPrint/issues/2134
+    html = '''
+      <style>
+        @page { size: 5cm }
+        tr { break-inside: avoid; line-height: 2cm }
+        div { position: absolute }
+      </style>
+      <table>
+        <tr><td>a</td></tr>
+        <tr>
+          <td><div>a<br>b</div></td>
+          <td>a<br>b</td>
+        </tr>
+      </table>
+    '''
+    page1, page2 = render_pages(html)
+
+    html, = page1.children
+    body, = html.children
+    table_wrapper, = body.children
+    table, = table_wrapper.children
+    group, = table.children
+    row, = group.children  # Only first row
+
+    html, = page2.children
+    body, = html.children  # No absolute div here
+    table_wrapper, = body.children
+    table, = table_wrapper.children
+    group, = table.children
+    row, = group.children  # Only second row
+
+
+def test_table_break_inside_avoid_absolute():
+    # Test regression: https://github.com/Kozea/WeasyPrint/issues/2134
+    html = '''
+      <style>
+        @page { size: 5cm }
+        body { line-height: 2cm }
+        table { break-inside: avoid }
+        div { position: absolute }
+      </style>
+      <p>text</p>
+      <table>
+        <tr>
+          <td><div>a<br>b</div></td>
+          <td>a<br>b</td>
+        </tr>
+      </table>
+    '''
+    page1, page2 = render_pages(html)
+
+    html, = page1.children
+    body, = html.children
+    p, = body.children
+    line, = p.children
+    text, = line.children
+    assert text.text == 'text'
+
+    html, = page2.children
+    body, = html.children  # No absolute div here
 
 
 def test_table_break_children_margin():
@@ -2973,3 +3163,147 @@ table.key-val tr td:nth-child(1) { min-width: 13em; }
 
     assert table1_td1.min_width == table2_td1.min_width
     assert table1_td1.width == table2_td1.width
+
+
+@assert_no_logs
+def test_table_cell_max_width():
+    page, = render_pages('''
+    <style>
+      td {
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        overflow: hidden;
+        max-width: 45px;
+      }
+    </style>
+      <table>
+        <tr>
+          <td>abcdefghijkl</td>
+        </tr>
+      </table>
+    ''')
+    html, = page.children
+    body, = html.children
+    table_wrapper, = body.children
+    table, = table_wrapper.children
+    tbody, = table.children
+    tr, = tbody.children
+    td, = tr.children
+    assert td.max_width == 45
+    assert td.width == 45
+
+
+black = (0, 0, 0, 1)
+red = (1, 0, 0, 1)
+green = (0, 1, 0, 1)  # lime in CSS
+blue = (0, 0, 1, 1)
+yellow = (1, 1, 0, 1)
+black_3 = ('solid', 3, black)
+red_1 = ('solid', 1, red)
+yellow_5 = ('solid', 5, yellow)
+green_5 = ('solid', 5, green)
+dashed_blue_5 = ('dashed', 5, blue)
+
+
+@assert_no_logs
+def test_border_collapse_1():
+    html = parse_all('<table></table>')
+    body, = html.children
+    table_wrapper, = body.children
+    table, = table_wrapper.children
+    assert isinstance(table, boxes.TableBox)
+    assert not hasattr(table, 'collapsed_border_grid')
+
+    grid = _get_grid('<table style="border-collapse: collapse"></table>', 0, 0)
+    assert grid == ([], [])
+
+
+@assert_no_logs
+def test_border_collapse_2():
+    vertical_borders, horizontal_borders = _get_grid('''
+      <style>td { border: 1px solid red }</style>
+      <table style="border-collapse: collapse; border: 3px solid black">
+        <tr> <td>A</td> <td>B</td> </tr>
+        <tr> <td>C</td> <td>D</td> </tr>
+      </table>
+    ''', 2, 2)
+    assert vertical_borders == [
+        [black_3, red_1, black_3],
+        [black_3, red_1, black_3],
+    ]
+    assert horizontal_borders == [
+        [black_3, black_3],
+        [red_1, red_1],
+        [black_3, black_3],
+    ]
+
+
+@assert_no_logs
+def test_border_collapse_3():
+    # hidden vs. none
+    vertical_borders, horizontal_borders = _get_grid('''
+      <style>table, td { border: 3px solid }</style>
+      <table style="border-collapse: collapse">
+        <tr> <td>A</td> <td style="border-style: hidden">B</td> </tr>
+        <tr> <td>C</td> <td style="border-style: none">D</td> </tr>
+      </table>
+    ''', 2, 2)
+    assert vertical_borders == [
+        [black_3, None, None],
+        [black_3, black_3, black_3],
+    ]
+    assert horizontal_borders == [
+        [black_3, None],
+        [black_3, None],
+        [black_3, black_3],
+    ]
+
+
+@assert_no_logs
+def test_border_collapse_4():
+    vertical_borders, horizontal_borders = _get_grid('''
+      <style>td { border: 1px solid red }</style>
+      <table style="border-collapse: collapse; border: 5px solid yellow">
+        <col style="border: 3px solid black" />
+        <tr> <td></td> <td></td> <td></td> </tr>
+        <tr> <td></td> <td style="border: 5px dashed blue"></td>
+          <td style="border: 5px solid lime"></td> </tr>
+        <tr> <td></td> <td></td> <td></td> </tr>
+        <tr> <td></td> <td></td> <td></td> </tr>
+      </table>
+    ''', 3, 4)
+    assert vertical_borders == [
+        [yellow_5, black_3, red_1, yellow_5],
+        [yellow_5, dashed_blue_5, green_5, green_5],
+        [yellow_5, black_3, red_1, yellow_5],
+        [yellow_5, black_3, red_1, yellow_5],
+    ]
+    assert horizontal_borders == [
+        [yellow_5, yellow_5, yellow_5],
+        [red_1, dashed_blue_5, green_5],
+        [red_1, dashed_blue_5, green_5],
+        [red_1, red_1, red_1],
+        [yellow_5, yellow_5, yellow_5],
+    ]
+
+
+@assert_no_logs
+def test_border_collapse_5():
+    # rowspan and colspan
+    vertical_borders, horizontal_borders = _get_grid('''
+        <style>col, tr { border: 3px solid }</style>
+        <table style="border-collapse: collapse">
+            <col /><col /><col />
+            <tr> <td rowspan=2></td> <td></td> <td></td> </tr>
+            <tr>                     <td colspan=2></td> </tr>
+        </table>
+    ''', 3, 2)
+    assert vertical_borders == [
+        [black_3, black_3, black_3, black_3],
+        [black_3, black_3, None, black_3],
+    ]
+    assert horizontal_borders == [
+        [black_3, black_3, black_3],
+        [None, black_3, black_3],
+        [black_3, black_3, black_3],
+    ]

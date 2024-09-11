@@ -2,6 +2,8 @@
 
 import pytest
 
+from ..testing_utils import SANS_FONTS
+
 
 def test_text_overflow_clip(assert_pixels):
     assert_pixels('''
@@ -14,7 +16,6 @@ def test_text_overflow_clip(assert_pixels):
         _________
     ''', '''
       <style>
-        @font-face {src: url(weasyprint.otf); font-family: weasyprint}
         @page {
           size: 9px 7px;
         }
@@ -54,7 +55,6 @@ def test_text_overflow_ellipsis(assert_pixels):
         _________
     ''', '''
       <style>
-        @font-face {src: url(weasyprint.otf); font-family: weasyprint}
         @page {
           size: 9px 16px;
         }
@@ -97,7 +97,6 @@ def test_text_align_rtl_trailing_whitespace(assert_pixels):
         _________
     ''', '''
       <style>
-        @font-face {src: url(weasyprint.otf); font-family: weasyprint}
         @page { size: 9px }
         body { font-family: weasyprint; color: blue; font-size: 1px }
         p { background: red; line-height: 1; width: 7em; margin: 1em }
@@ -125,7 +124,6 @@ def test_max_lines_ellipsis(assert_pixels):
     ''', '''
       <style>
         @page {size: 10px 10px;}
-        @font-face {src: url(weasyprint.otf); font-family: weasyprint}
         p {
           block-ellipsis: auto;
           color: blue;
@@ -158,7 +156,6 @@ def test_max_lines_nested(assert_pixels):
     ''', '''
       <style>
         @page {size: 10px 12px;}
-        @font-face {src: url(weasyprint.otf); font-family: weasyprint}
         div {
           continue: discard;
           font-family: weasyprint;
@@ -203,7 +200,6 @@ def test_line_clamp(assert_pixels):
     ''', '''
       <style>
         @page {size: 10px 10px;}
-        @font-face {src: url(weasyprint.otf); font-family: weasyprint}
         p {
           color: blue;
           font-family: weasyprint;
@@ -240,7 +236,6 @@ def test_line_clamp_none(assert_pixels):
     ''', '''
       <style>
         @page {size: 10px 10px;}
-        @font-face {src: url(weasyprint.otf); font-family: weasyprint}
         p {
           color: blue;
           font-family: weasyprint;
@@ -275,7 +270,6 @@ def test_line_clamp_number(assert_pixels):
     ''', '''
       <style>
         @page {size: 10px 10px;}
-        @font-face {src: url(weasyprint.otf); font-family: weasyprint}
         p {
           color: blue;
           font-family: weasyprint;
@@ -309,7 +303,6 @@ def test_line_clamp_nested(assert_pixels):
     ''', '''
       <style>
         @page {size: 10px 10px;}
-        @font-face {src: url(weasyprint.otf); font-family: weasyprint}
         div {
           color: blue;
           font-family: weasyprint;
@@ -348,7 +341,6 @@ def test_line_clamp_nested_after(assert_pixels):
     ''', '''
       <style>
         @page {size: 10px 10px;}
-        @font-face {src: url(weasyprint.otf); font-family: weasyprint}
         div {
           color: blue;
           font-family: weasyprint;
@@ -388,7 +380,6 @@ def test_ellipsis_nested(assert_pixels):
     ''', '''
       <style>
         @page {size: 10px 10px;}
-        @font-face {src: url(weasyprint.otf); font-family: weasyprint}
         div {
           block-ellipsis: auto;
           color: blue;
@@ -418,7 +409,6 @@ def test_text_align_right(assert_pixels):
         _________
     ''', '''
       <style>
-        @font-face {src: url(weasyprint.otf); font-family: weasyprint}
         @page {
           size: 9px 6px;
         }
@@ -446,7 +436,6 @@ def test_text_align_justify(assert_pixels):
         _________
     ''', '''
       <style>
-        @font-face {src: url(weasyprint.otf); font-family: weasyprint}
         @page {
           size: 9px 6px;
         }
@@ -472,7 +461,6 @@ def test_text_word_spacing(assert_pixels):
         ___________________
     ''', '''
       <style>
-        @font-face {src: url(weasyprint.otf); font-family: weasyprint}
         @page {
           size: 19px 4px;
         }
@@ -498,7 +486,6 @@ def test_text_letter_spacing(assert_pixels):
         ___________________
     ''', '''
       <style>
-        @font-face {src: url(weasyprint.otf); font-family: weasyprint}
         @page {
           size: 19px 4px;
         }
@@ -527,7 +514,6 @@ def test_text_underline(assert_pixels):
         _____________
     ''', '''
       <style>
-        @font-face {src: url(weasyprint.otf); font-family: weasyprint}
         @page {
           size: 13px 7px;
           margin: 2px;
@@ -555,7 +541,6 @@ def test_text_overline(assert_pixels):
         _____________
     ''', '''
       <style>
-        @font-face {src: url(weasyprint.otf); font-family: weasyprint}
         @page {
           size: 13px 7px;
           margin: 2px;
@@ -581,7 +566,6 @@ def test_text_line_through(assert_pixels):
         _____________
     ''', '''
       <style>
-        @font-face {src: url(weasyprint.otf); font-family: weasyprint}
         @page {
           size: 13px 7px;
           margin: 2px;
@@ -608,7 +592,6 @@ def test_text_multiple_text_decoration(assert_pixels):
         _____________
     ''', '''
       <style>
-        @font-face {src: url(weasyprint.otf); font-family: weasyprint}
         @page {
           size: 13px 7px;
           margin: 2px;
@@ -635,7 +618,6 @@ def test_text_nested_text_decoration(assert_pixels):
         _____________
     ''', '''
       <style>
-        @font-face {src: url(weasyprint.otf); font-family: weasyprint}
         @page {
           size: 13px 7px;
           margin: 2px;
@@ -666,7 +648,6 @@ def test_text_nested_text_decoration_color(assert_pixels):
         _____________
     ''', '''
       <style>
-        @font-face {src: url(weasyprint.otf); font-family: weasyprint}
         @page {
           size: 13px 7px;
           margin: 2px;
@@ -703,7 +684,6 @@ def test_text_nested_block_text_decoration(assert_pixels):
         _______
     ''', '''
       <style>
-        @font-face {src: url(weasyprint.otf); font-family: weasyprint}
         @page {
           size: 7px 13px;
           margin: 2px;
@@ -734,7 +714,6 @@ def test_text_float_text_decoration(assert_pixels):
         _____________
     ''', '''
       <style>
-        @font-face {src: url(weasyprint.otf); font-family: weasyprint}
         @page {
           size: 13px 7px;
           margin: 2px;
@@ -764,7 +743,6 @@ def test_text_decoration_var(assert_pixels):
         _____________
     ''', '''
       <style>
-        @font-face {src: url(weasyprint.otf); font-family: weasyprint}
         @page {
           size: 13px 7px;
           margin: 2px;
@@ -790,7 +768,6 @@ def test_zero_width_character(assert_pixels):
         ______
     ''', '''
       <style>
-        @font-face {src: url(weasyprint.otf); font-family: weasyprint}
         @page {
           size: 6px 4px;
           margin: 1px;
@@ -813,7 +790,6 @@ def test_font_size_very_small(assert_pixels):
         __________
     ''', '''
       <style>
-        @font-face {src: url(weasyprint.otf); font-family: weasyprint}
         @page {
           size: 10px 4px;
           margin: 1px;
@@ -830,25 +806,23 @@ def test_font_size_very_small(assert_pixels):
 def test_missing_glyph_fallback(assert_pixels):
     # The apostrophe is not included in weasyprint.otf
     assert_pixels('''
-        zzzzzzzzzzzzzzzzz___
-        zzzzzzzzzzzzzzzzzRR_
-        zzzzzzzzzzzzzzzzzRR_
-        zzzzzzzzzzzzzzzzz___
+        ___zzzzzzzzzzzzzzzzz
+        _RRzzzzzzzzzzzzzzzzz
+        _RRzzzzzzzzzzzzzzzzz
+        ___zzzzzzzzzzzzzzzzz
     ''', '''
       <style>
-        @font-face {src: url(weasyprint.otf); font-family: weasyprint}
         @page {
           size: 20px 4px;
         }
         body {
           color: red;
-          font-family: weasyprint;
+          font-family: weasyprint, %s;
           font-size: 2px;
           line-height: 0;
           margin: 2px 1px;
-          text-align: right;
         }
-      </style>'a''')
+      </style>a\'''' % SANS_FONTS)
 
 
 def test_tabulation_character(assert_pixels):
@@ -860,7 +834,6 @@ def test_tabulation_character(assert_pixels):
         __________
     ''', '''
       <style>
-        @font-face {src: url(weasyprint.otf); font-family: weasyprint}
         @page {
           size: 10px 4px;
           margin: 1px;

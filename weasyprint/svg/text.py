@@ -3,7 +3,7 @@
 from math import cos, inf, radians, sin
 
 from ..matrix import Matrix
-from .bounding_box import EMPTY_BOUNDING_BOX, extend_bounding_box
+from .bounding_box import extend_bounding_box
 from .utils import normalize, size
 
 
@@ -21,7 +21,7 @@ class TextBox:
 def text(svg, node, font_size):
     """Draw text node."""
     from ..css.properties import INITIAL_VALUES
-    from ..draw import draw_emojis, draw_first_line
+    from ..draw.text import draw_emojis, draw_first_line
     from ..text.line_break import split_first_line
 
     # TODO: use real computed values
@@ -112,9 +112,6 @@ def text(svg, node, font_size):
     elif alignment_baseline in (
             'text-after-edge', 'after_edge', 'bottom', 'text-bottom'):
         y_align = -descent
-
-    # Set bounding box
-    node.text_bounding_box = EMPTY_BOUNDING_BOX
 
     # Return early when there’s no text
     if not node.text:

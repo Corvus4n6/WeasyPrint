@@ -1,7 +1,8 @@
 """Validate properties, expanders and descriptors."""
 
-
-from tinycss2 import serialize
+from cssselect2 import SelectorError, compile_selector_list
+from tinycss2 import parse_blocks_contents, serialize
+from tinycss2.ast import FunctionBlock, IdentToken, LiteralToken, WhitespaceToken
 
 from ... import LOGGER
 from ..utils import InvalidValues, remove_whitespace
@@ -57,14 +58,16 @@ NOT_PRINT_MEDIA = {
     'view-timeline-inset',
     'view-timeline-name',
     'view-transition-name',
+    'will-change',
     # Dynamic and interactive
     'caret',
     'caret-color',
     'caret-shape',
     'cursor',
     'field-sizing',
-    'font-display',
+    'pointer-event',
     'resize',
+    'touch-action',
     # Browser viewport scrolling
     'overscroll-behavior',
     'overscroll-behavior-block',
@@ -104,9 +107,11 @@ NOT_PRINT_MEDIA = {
     'scrollbar-gutter',
     'scrollbar-width',
 }
+NESTING_SELECTOR = LiteralToken(1, 1, '&')
+ROOT_TOKEN = LiteralToken(1, 1, ':'), IdentToken(1, 1, 'root')
 
 
-def preprocess_declarations(base_url, declarations):
+def preprocess_declarations(base_url, declarations, prelude=None):
     """Expand shorthand properties, filter unsupported properties and values.
 
     Log a warning for every ignored declaration.
@@ -114,12 +119,63 @@ def preprocess_declarations(base_url, declarations):
     Return a iterable of ``(name, value, important)`` tuples.
 
     """
+    # Compile list of selectors.
+    if prelude is not None:
+        try:
+            if NESTING_SELECTOR in prelude:
+                # Handle & selector in non-nested rule. MDN explains that & is
+                # then equivalent to :scope, and :scope is equivalent to :root
+                # as we don’t support :scope yet.
+                original_prelude, prelude = prelude, []
+                for token in original_prelude:
+                    if token == NESTING_SELECTOR:
+                        prelude.extend(ROOT_TOKEN)
+                    else:
+                        prelude.append(token)
+            selectors = compile_selector_list(prelude)
+        except SelectorError:
+            raise SelectorError(f"'{serialize(prelude)}'")
+
+    # Yield declarations.
+    is_token = LiteralToken(1, 1, ':'), FunctionBlock(1, 1, 'is', prelude)
     for declaration in declarations:
         if declaration.type == 'error':
             LOGGER.warning(
                 'Error: %s at %d:%d.',
                 declaration.message,
                 declaration.source_line, declaration.source_column)
+
+        if declaration.type == 'qualified-rule':
+            # Nested rule.
+            if prelude is None:
+                continue
+            declaration_prelude = []
+            token_groups = [[]]
+            for token in declaration.prelude:
+                if token == ',':
+                    token_groups.append([])
+                else:
+                    token_groups[-1].append(token)
+            for token_group in token_groups:
+                if NESTING_SELECTOR in token_group:
+                    # Replace & selector by parent.
+                    for token in declaration.prelude:
+                        if token == NESTING_SELECTOR:
+                            declaration_prelude.extend(is_token)
+                        else:
+                            declaration_prelude.append(token)
+                else:
+                    # No & selector, prepend parent.
+                    is_token = (
+                        LiteralToken(1, 1, ':'),
+                        FunctionBlock(1, 1, 'is', prelude))
+                    declaration_prelude.extend([
+                        *is_token, WhitespaceToken(1, 1, ' '),
+                        *token_group])
+                declaration_prelude.append(LiteralToken(1, 1, ','))
+            yield from preprocess_declarations(
+                base_url, parse_blocks_contents(declaration.content),
+                declaration_prelude[:-1])
 
         if declaration.type != 'declaration':
             continue
@@ -166,7 +222,7 @@ def preprocess_declarations(base_url, declarations):
             validation_error('debug', 'prefixed selectors are ignored')
             continue
 
-        expander_ = EXPANDERS.get(name, validate_non_shorthand)
+        validator = EXPANDERS.get(name, validate_non_shorthand)
         tokens = remove_whitespace(declaration.value)
         try:
             # Having no tokens is allowed by grammar but refused by all
@@ -174,7 +230,7 @@ def preprocess_declarations(base_url, declarations):
             if not tokens:
                 raise InvalidValues('no value')
             # Use list() to consume generators now and catch any error.
-            result = list(expander_(name, tokens, base_url))
+            result = list(validator(tokens, name, base_url))
         except InvalidValues as exc:
             validation_error(
                 'warning',
@@ -183,4 +239,8 @@ def preprocess_declarations(base_url, declarations):
 
         important = declaration.important
         for long_name, value in result:
-            yield long_name.replace('-', '_'), value, important
+            if prelude is not None:
+                declaration = (long_name.replace('-', '_'), value, important)
+                yield selectors, declaration
+            else:
+                yield long_name.replace('-', '_'), value, important

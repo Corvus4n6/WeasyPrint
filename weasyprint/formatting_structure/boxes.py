@@ -68,6 +68,7 @@ class Box:
     # Default, may be overriden on instances.
     is_table_wrapper = False
     is_flex_item = False
+    is_grid_item = False
     is_for_root_element = False
     is_column = False
     is_leader = False
@@ -82,13 +83,23 @@ class Box:
 
     # Default, overriden on some subclasses
     def all_children(self):
-        return ()
+        return self.children
+
+    def descendants(self, placeholders=False):
+        """A flat generator for a box, its children and descendants."""
+        yield self
+        for child in self.children:
+            if placeholders or isinstance(child, Box):
+                yield from child.descendants(placeholders)
+            else:
+                yield child
 
     def __init__(self, element_tag, style, element):
         self.element_tag = element_tag
         self.element = element
         self.style = style
         self.remove_decoration_sides = set()
+        self.children = []
 
     def __repr__(self):
         return f'<{type(self).__name__} {self.element_tag}>'
@@ -325,15 +336,18 @@ class Box:
                 return not isinstance(self, (LineBox, TextBox))
         return False
 
+    def is_form(self):
+        """Return whether this box is a form element."""
+        if self.element is None:
+            return False
+        return self.element.tag == 'form'
+
 
 class ParentBox(Box):
     """A box that has children."""
     def __init__(self, element_tag, style, element, children):
         super().__init__(element_tag, style, element)
         self.children = tuple(children)
-
-    def all_children(self):
-        return self.children
 
     def _reset_spacing(self, side):
         """Set to 0 the margin, padding and border of ``side``."""
@@ -353,7 +367,7 @@ class ParentBox(Box):
     def copy_with_children(self, new_children):
         """Create a new equivalent box with given ``new_children``."""
         new_box = self.copy()
-        new_box.children = list(new_children)
+        new_box.children = new_children
 
         # Clear and reset removed decorations as we don't want to keep the
         # previous data, for example when a box is split between two pages.
@@ -363,18 +377,8 @@ class ParentBox(Box):
 
     def deepcopy(self):
         result = self.copy()
-        result.children = tuple(child.deepcopy() for child in self.children)
+        result.children = list(child.deepcopy() for child in self.children)
         return result
-
-    def descendants(self):
-        """A flat generator for a box, its children and descendants."""
-        yield self
-        for child in self.children:
-            if isinstance(child, ParentBox):
-                for grand_child in child.descendants():
-                    yield grand_child
-            else:
-                yield child
 
     def get_wrapped_table(self):
         """Get the table wrapped by the box."""
@@ -776,5 +780,25 @@ class InlineFlexBox(FlexContainerBox, InlineLevelBox):
     """A box that is both inline-level and a flex container.
 
     It behaves as inline on the outside and as a flex container on the inside.
+
+    """
+
+
+class GridContainerBox(ParentBox):
+    """A box that contains only grid-items."""
+
+
+class GridBox(GridContainerBox, BlockLevelBox):
+    """A box that is both block-level and a grid container.
+
+    It behaves as block on the outside and as a grid container on the inside.
+
+    """
+
+
+class InlineGridBox(GridContainerBox, InlineLevelBox):
+    """A box that is both inline-level and a grid container.
+
+    It behaves as inline on the outside and as a grid container on the inside.
 
     """

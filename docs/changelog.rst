@@ -2,6 +2,449 @@ Changelog
 =========
 
 
+Version 62.3
+------------
+
+Released on 2024-06-21.
+
+Bug fixes:
+
+* `#2174 <https://github.com/Kozea/WeasyPrint/issues/2174>`_:
+  Fix extra width distribution for auto table layout
+* `#2175 <https://github.com/Kozea/WeasyPrint/issues/2175>`_:
+  Don’t compress PDF metadata for PDF/A-1
+* `61f8bb3 <https://github.com/Kozea/WeasyPrint/commit/61f8bb3>`_:
+  Set default PDF variant values in options before generating PDF
+* `2c4351e <https://github.com/Kozea/WeasyPrint/commit/2c4351e>`_:
+  Avoid PDF artifacts when drawing 0-width borders
+* `d9d7f62 <https://github.com/Kozea/WeasyPrint/commit/d9d7f62>`_:
+  Don’t duplicate column when container is split on multiple pages
+* `4617b94 <https://github.com/Kozea/WeasyPrint/commit/4617b94>`_:
+  Don’t set default Fontconfig values for unset properties
+* `4c81663 <https://github.com/Kozea/WeasyPrint/commit/4c81663>`_:
+  Fix layout when all footnotes are removed from the footnote area
+* `#2184 <https://github.com/Kozea/WeasyPrint/issues/2184>`_:
+  Make items overflowing grid wrap to the next row/column
+* `#2187 <https://github.com/Kozea/WeasyPrint/issues/2187>`_:
+  Don’t append useless tracks when grid elements are positioned
+
+Contributors:
+
+* Guillaume Ayoub
+
+Backers and sponsors:
+
+* Spacinov
+* Kobalt
+* Grip Angebotssoftware
+* Manuel Barkhau
+* SimonSoft
+* Menutech
+* KontextWork
+* Simon Sapin
+* René Fritz
+* TrainingSparkle
+* Healthchecks.io
+* Hammerbacher
+* Docraptor
+* Yanal-Yvez Fargialla
+* Douwe van Loenen
+* Morntag
+* Xavid
+
+
+Version 62.2
+------------
+
+Released on 2024-06-04.
+
+Features:
+
+* `#2142 <https://github.com/Kozea/WeasyPrint/issues/2142>`_,
+  `#2162 <https://github.com/Kozea/WeasyPrint/pull/2162>`_:
+  Support grid-auto-flow: column, with financial support from Menutech
+
+Bug fixes:
+
+* `#2167 <https://github.com/Kozea/WeasyPrint/issues/2167>`_:
+  Fix space added by CSS gap at the end
+* `#2134 <https://github.com/Kozea/WeasyPrint/issues/2134>`_:
+  Remove absolute placeholders from discarded content
+* `#2154 <https://github.com/Kozea/WeasyPrint/issues/2154>`_:
+  Don’t crash when grid items have auto margins
+* `8cdd66f <https://github.com/Kozea/WeasyPrint/commit/8cdd66f>`_:
+  Fix CSS nesting for nested selectors with comma
+* `3359db5 <https://github.com/Kozea/WeasyPrint/commit/3359db5>`_:
+  Fix and test grid shorthand
+* `82deda4 <https://github.com/Kozea/WeasyPrint/commit/82deda4>`_:
+  Fix wrong resume_at for split floats
+* `ff2acf1 <https://github.com/Kozea/WeasyPrint/commit/ff2acf1>`_:
+  Ensure that gradient size is positive to please some PDF readers
+
+Contributors:
+
+* Guillaume Ayoub
+
+Backers and sponsors:
+
+* Spacinov
+* Kobalt
+* Grip Angebotssoftware
+* Manuel Barkhau
+* SimonSoft
+* Menutech
+* KontextWork
+* Simon Sapin
+* René Fritz
+* TrainingSparkle
+* Healthchecks.io
+* Hammerbacher
+* Docraptor
+* Yanal-Yvez Fargialla
+* Douwe van Loenen
+* Morntag
+* Xavid
+
+
+Version 62.1
+------------
+
+Released on 2024-05-06.
+
+Bug fixes:
+
+* `#2144 <https://github.com/Kozea/WeasyPrint/issues/2144>`_,
+  `#2149 <https://github.com/Kozea/WeasyPrint/pull/2149>`_:
+  Avoid broken fonts when generating multiple documents
+* `c10c6892 <https://github.com/Kozea/WeasyPrint/commit/c10c6892>`_:
+  Display at least one grid row on empty pages
+* `#2146 <https://github.com/Kozea/WeasyPrint/issues/2146>`_:
+  Don’t crash when flex container’s parent’s height is auto
+
+Contributors:
+
+* Guillaume Ayoub
+* Claudius Ellsel
+
+Backers and sponsors:
+
+* Spacinov
+* Kobalt
+* Grip Angebotssoftware
+* Manuel Barkhau
+* SimonSoft
+* Menutech
+* KontextWork
+* Simon Sapin
+* René Fritz
+* TrainingSparkle
+* Healthchecks.io
+* Docraptor
+* Yanal-Yvez Fargialla
+* Douwe van Loenen
+* Morntag
+* Xavid
+
+
+Version 62.0
+------------
+
+Released on 2024-04-30.
+
+Dependencies:
+
+* Python 3.9+ is now needed, Python 3.7 and 3.8 are not supported anymore
+* pydyf 0.10.0+ is now needed
+* tinycss2 1.3.0+ is now needed
+
+Features:
+
+* `#543 <https://github.com/Kozea/WeasyPrint/issues/543>`_,
+  `#2121 <https://github.com/Kozea/WeasyPrint/pull/2121>`_:
+  Support CSS Grid layout
+* `#2124 <https://github.com/Kozea/WeasyPrint/issues/2124>`_,
+  `#2125 <https://github.com/Kozea/WeasyPrint/pull/2125>`_:
+  Support border-image-* properties
+* `#2084 <https://github.com/Kozea/WeasyPrint/issues/2084>`_,
+  `#2077 <https://github.com/Kozea/WeasyPrint/pull/2077>`_:
+  Support CSS nesting
+* `#2101 <https://github.com/Kozea/WeasyPrint/issues/2101>`_:
+  Support HTML maxlength attribute for form fields
+* `#2095 <https://github.com/Kozea/WeasyPrint/pull/2095>`_:
+  Apply overflow to replaced boxes
+* `245e4f5 <https://github.com/Kozea/WeasyPrint/commit/245e4f5>`_:
+  Add support of PDF/A-?u
+
+Bug fixes:
+
+* `#2136 <https://github.com/Kozea/WeasyPrint/issues/2136>`_:
+  Don’t clip aligned text in SVG
+* `#2135 <https://github.com/Kozea/WeasyPrint/pull/2135>`_:
+  Allow column-direction flex containers to use percentage-based heights
+* `#2128 <https://github.com/Kozea/WeasyPrint/issues/2128>`_:
+  Don’t crash when a FontConfig object is destroyed early
+* `#2079 <https://github.com/Kozea/WeasyPrint/issues/2079>`_:
+  Fix executable file for some Windows versions
+* `#2131 <https://github.com/Kozea/WeasyPrint/issues/2131>`_:
+  Fix alpha for images before/after transparent text
+* `#2111 <https://github.com/Kozea/WeasyPrint/issues/2111>`_:
+  Handle auto and none values for CSS quotes property
+* `#2103 <https://github.com/Kozea/WeasyPrint/issues/2103>`_:
+  Don’t crash with overconstrained columns
+* `#2100 <https://github.com/Kozea/WeasyPrint/issues/2100>`_:
+  Fix rounding error when detecting overflows
+* `#2093 <https://github.com/Kozea/WeasyPrint/issues/2093>`_,
+  `#2097 <https://github.com/Kozea/WeasyPrint/issues/2097>`_,
+  `#2094 <https://github.com/Kozea/WeasyPrint/pull/2094>`_:
+  Mark use of md5() and sha1() as not for security
+* `#1956 <https://github.com/Kozea/WeasyPrint/issues/1956>`_,
+  `#2087 <https://github.com/Kozea/WeasyPrint/pull/2087>`_:
+  Use CSS table module level 3 to compute widths
+* `#2086 <https://github.com/Kozea/WeasyPrint/pull/2086>`_:
+  Fix selects with empty values displaying None
+* `#1112 <https://github.com/Kozea/WeasyPrint/issues/1112>`_,
+  `#2082 <https://github.com/Kozea/WeasyPrint/issues/2082>`_,
+  `#2085 <https://github.com/Kozea/WeasyPrint/pull/2085>`_:
+  Fix computation for outer min-content width for table cells
+* `016bd81 <https://github.com/Kozea/WeasyPrint/commit/016bd81>`_:
+  Fix many different bugs with SVG markers
+
+Performance:
+
+* `#2130 <https://github.com/Kozea/WeasyPrint/issues/2130>`_:
+  Cache font key instead of whole font content
+
+Documentation:
+
+* `#2108 <https://github.com/Kozea/WeasyPrint/pull/2108>`_:
+  Update documentation about CSS leader() function
+
+Contributors:
+
+* Guillaume Ayoub
+* Lucie Anglade
+* Xavid Pretzer
+* kygoh
+* Germain Gueutier
+* Vagner José Nicolodi
+
+Backers and sponsors:
+
+* Spacinov
+* Kobalt
+* Grip Angebotssoftware
+* Manuel Barkhau
+* SimonSoft
+* Menutech
+* KontextWork
+* Simon Sapin
+* René Fritz
+* TrainingSparkle
+* Healthchecks.io
+* Docraptor
+* Yanal-Yvez Fargialla
+* Douwe van Loenen
+* Morntag
+* Xavid
+
+
+Version 61.2
+------------
+
+Released on 2024-03-08.
+
+**This is a security update.**
+
+We strongly recommend to upgrade WeasyPrint to the latest version if you use
+WeasyPrint 61.0 or 61.1. Older versions are not impacted.
+
+Security:
+
+- Always use URL fetcher for attachments
+
+Contributors:
+
+* Guillaume Ayoub
+* Ilia Novoselov
+
+Backers and sponsors:
+
+* Spacinov
+* Kobalt
+* Grip Angebotssoftware
+* Manuel Barkhau
+* SimonSoft
+* Menutech
+* KontextWork
+* René Fritz
+* Simon Sapin
+* Arcanite
+* TrainingSparkle
+* Healthchecks.io
+* Hammerbacher
+* Docraptor
+* Yanal-Yvez Fargialla
+* Morntag
+* NBCO
+
+
+Version 61.1
+------------
+
+Released on 2024-02-26.
+
+Bug fixes:
+
+- `#2075 <https://github.com/Kozea/WeasyPrint/issues/2075>`_:
+  Use default value when variable is not defined
+- `#2070 <https://github.com/Kozea/WeasyPrint/issues/2070>`_:
+  Don’t crash when rendering SVGs with non-text a children
+- Don’t crash when SVG file can’t be rendered
+
+Documentation:
+
+- `#2067 <https://github.com/Kozea/WeasyPrint/pull/2067>`_:
+  Suggest "dnf" instead of "yum" to install Fedora packages
+- Improve documentation for Windows
+- Fix required version of TinyCSS2
+
+Contributors:
+
+* Guillaume Ayoub
+* Felix Schwarz
+* Lucie Anglade
+
+Backers and sponsors:
+
+* Spacinov
+* Kobalt
+* Grip Angebotssoftware
+* Manuel Barkhau
+* SimonSoft
+* Menutech
+* KontextWork
+* René Fritz
+* Simon Sapin
+* Arcanite
+* TrainingSparkle
+* Healthchecks.io
+* Hammerbacher
+* Docraptor
+* Yanal-Yvez Fargialla
+* Morntag
+* NBCO
+
+
+Version 61.0
+------------
+
+Released on 2024-02-12.
+
+Python API:
+
+* ``DocumentMetadata.attachments`` is now a list of ``Attachment`` objects, not
+  a list of ``(url, description)`` tuples.
+
+New features:
+
+* `#1219 <https://github.com/Kozea/WeasyPrint/issues/1219>`_,
+  `#2017 <https://github.com/Kozea/WeasyPrint/pull/2017>`_:
+  Support var() in shorthand and multiple-value functions
+* `#1986 <https://github.com/Kozea/WeasyPrint/issues/1986>`_:
+  Support percentages for opacity
+* `#2050 <https://github.com/Kozea/WeasyPrint/pull/2050>`_:
+  Build executable file for Windows
+* `#2000 <https://github.com/Kozea/WeasyPrint/pull/2000>`_:
+  Support select fields
+* `#1993 <https://github.com/Kozea/WeasyPrint/issues/1993>`_:
+  Handle background-attachment: fixed to cover the whole page
+* `#2023 <https://github.com/Kozea/WeasyPrint/issues/2023>`_,
+  `#2022 <https://github.com/Kozea/WeasyPrint/pull/2022>`_:
+  Allow text-based file objects for HTML and CSS classes
+* `#2014 <https://github.com/Kozea/WeasyPrint/pull/2014>`_:
+  Remove warnings for PDF/A and PDF/UA compatibility
+
+Bug fixes:
+
+* `#2052 <https://github.com/Kozea/WeasyPrint/issues/2052>`_,
+  `#1869 <https://github.com/Kozea/WeasyPrint/pull/1869>`_:
+  Handle attachments for PDF/A documents
+* `#2013 <https://github.com/Kozea/WeasyPrint/issues/2013>`_,
+  `#2051 <https://github.com/Kozea/WeasyPrint/pull/2051>`_:
+  Apply margin to running tables
+* `#1278 <https://github.com/Kozea/WeasyPrint/issues/1278>`_,
+  `#1884 <https://github.com/Kozea/WeasyPrint/pull/1884>`_:
+  Draw collapsed borders of running tables
+* `#2029 <https://github.com/Kozea/WeasyPrint/issues/2029>`_:
+  Fix page counter in non-root absolute boxes
+* `#2043 <https://github.com/Kozea/WeasyPrint/pull/2043>`_:
+  Fix text-anchor on SVG tspan elements
+* `#1968 <https://github.com/Kozea/WeasyPrint/issues/1968>`_,
+  `#2039 <https://github.com/Kozea/WeasyPrint/pull/2039>`_:
+  Use cell's border-height to calculate table row height
+* `#2030 <https://github.com/Kozea/WeasyPrint/issues/2030>`_:
+  Ensure that bounding box is set to invisible text tags
+* `#2040 <https://github.com/Kozea/WeasyPrint/issues/2040>`_,
+  `#2041 <https://github.com/Kozea/WeasyPrint/pull/2041>`_:
+  Don’t crash on malformed URLs
+* `#2026 <https://github.com/Kozea/WeasyPrint/issues/2026>`_:
+  Don’t break pages when fixed-height elements don’t overflow page
+* `#2038 <https://github.com/Kozea/WeasyPrint/issues/2038>`_:
+  Don’t mix original streams when drawing transparent text
+* `#2016 <https://github.com/Kozea/WeasyPrint/issues/2016>`_:
+  Avoid duplication when breaking out-of-flow boxes
+* `#2012 <https://github.com/Kozea/WeasyPrint/issues/2012>`_:
+  Don’t crash when CSS properties have no value
+* `#2010 <https://github.com/Kozea/WeasyPrint/issues/2010>`_,
+  `#1287 <https://github.com/Kozea/WeasyPrint/issues/1287>`_:
+  Fix many corner cases with CSS variables
+* `#1996 <https://github.com/Kozea/WeasyPrint/issues/1996>`_:
+  Don’t crash when drawing groove/ridge collapsed borders
+* `#1982 <https://github.com/Kozea/WeasyPrint/issues/1982>`_:
+  Fix SVG markers size, position and drawing
+
+Documentation:
+
+* `#2021 <https://github.com/Kozea/WeasyPrint/issues/2021>`_,
+  `#2048 <https://github.com/Kozea/WeasyPrint/pull/2048>`_:
+  Replace non-virtualenv installation instructions with distribution packages
+
+Contributors:
+
+* Guillaume Ayoub
+* kygoh
+* Lucie Anglade
+* Timo Ramsauer
+* Alexander Gitter
+* Michael Lisitsa
+* Vagner José Nicolodi
+* Manolis Stamatogiannakis
+* Pascal de Bruijn
+* Viktor Shevtsov
+* Eduardo Gonzalez
+* Kesara Rathnayake
+
+Backers and sponsors:
+
+* Spacinov
+* Kobalt
+* Grip Angebotssoftware
+* Manuel Barkhau
+* SimonSoft
+* Menutech
+* KontextWork
+* René Fritz
+* Simon Sapin
+* Arcanite
+* TrainingSparkle
+* Healthchecks.io
+* Hammerbacher
+* Docraptor
+* Yanal-Yvez Fargialla
+* Morntag
+* NBCO
+
+
 Version 60.2
 ------------
 

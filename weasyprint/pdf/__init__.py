@@ -1,17 +1,20 @@
 """PDF generation management."""
 
+from importlib.resources import files
+
 import pydyf
 
-from .. import VERSION
+from .. import VERSION, Attachment
 from ..html import W3C_DATE_RE
 from ..logger import LOGGER, PROGRESS_LOGGER
 from ..matrix import Matrix
 from . import pdfa, pdfua
-from .anchors import (
-    add_annotations, add_inputs, add_links, add_outlines, resolve_links,
-    write_pdf_attachment)
 from .fonts import build_fonts_dictionary
 from .stream import Stream
+
+from .anchors import (  # isort:skip
+    add_annotations, add_forms, add_links, add_outlines, resolve_links,
+    write_pdf_attachment)
 
 VARIANTS = {
     name: data for variants in (pdfa.VARIANTS, pdfua.VARIANTS)
@@ -115,16 +118,16 @@ def generate_pdf(document, target, zoom, **options):
 
     # Set properties according to PDF variants
     mark = False
-    variant, version = options['pdf_variant'], options['pdf_version']
+    srgb = options['srgb']
+    variant = options['pdf_variant']
     if variant:
         variant_function, properties = VARIANTS[variant]
-        if 'version' in properties:
-            version = properties['version']
         if 'mark' in properties:
             mark = properties['mark']
+        if 'srgb' in properties:
+            srgb = properties['srgb']
 
-    identifier = options['pdf_identifier']
-    pdf = pydyf.PDF((version or '1.7'), identifier)
+    pdf = pydyf.PDF()
     states = pydyf.Dictionary()
     x_objects = pydyf.Dictionary()
     patterns = pydyf.Dictionary()
@@ -186,10 +189,10 @@ def generate_pdf(document, target, zoom, **options):
         add_annotations(
             links_and_anchors[0], matrix, document, pdf, pdf_page, annot_files,
             compress)
-        add_inputs(
-            page.inputs, matrix, pdf, pdf_page, resources, stream,
+        add_forms(
+            page.forms, matrix, pdf, pdf_page, resources, stream,
             document.font_config.font_map, compress)
-        page.paint(stream, scale=scale)
+        page.paint(stream, scale)
 
         # Bleed
         bleed = {key: value * 0.75 for key, value in page.bleed.items()}
@@ -245,11 +248,16 @@ def generate_pdf(document, target, zoom, **options):
                 pdf.info[key] = pydyf.String(value)
 
     # Embedded files
-    attachments = metadata.attachments + (options['attachments'] or [])
+    attachments = metadata.attachments.copy()
+    if options['attachments']:
+        for attachment in options['attachments']:
+            if not isinstance(attachment, Attachment):
+                attachment = Attachment(
+                    attachment, url_fetcher=document.url_fetcher)
+            attachments.append(attachment)
     pdf_attachments = []
     for attachment in attachments:
-        pdf_attachment = write_pdf_attachment(
-            pdf, attachment, document.url_fetcher, compress)
+        pdf_attachment = write_pdf_attachment(pdf, attachment, compress)
         if pdf_attachment is not None:
             pdf_attachments.append(pdf_attachment)
     if pdf_attachments:
@@ -264,9 +272,8 @@ def generate_pdf(document, target, zoom, **options):
 
     # Embedded fonts
     subset = not options['full_fonts']
-    hinting = options['hinting']
     pdf_fonts = build_fonts_dictionary(
-        pdf, document.fonts, compress, subset, hinting)
+        pdf, document.fonts, compress, subset, options)
     pdf.add_object(pdf_fonts)
     if 'AcroForm' in pdf.catalog:
         # Include Dingbats for forms
@@ -292,8 +299,25 @@ def generate_pdf(document, target, zoom, **options):
             pdf.catalog['Names'] = pydyf.Dictionary()
         pdf.catalog['Names']['Dests'] = dests
 
+    if srgb:
+        # Add ICC profile.
+        profile = pydyf.Stream(
+            [(files(__package__) / 'sRGB2014.icc').read_bytes()],
+            pydyf.Dictionary({'N': 3, 'Alternate': '/DeviceRGB'}),
+            compress=compress)
+        pdf.add_object(profile)
+        pdf.catalog['OutputIntents'] = pydyf.Array([
+            pydyf.Dictionary({
+                'Type': '/OutputIntent',
+                'S': '/GTS_PDFA1',
+                'OutputConditionIdentifier': pydyf.String('sRGB IEC61966-2.1'),
+                'DestOutputProfile': profile.reference,
+            }),
+        ])
+
     # Apply PDF variants functions
     if variant:
-        variant_function(pdf, metadata, document, page_streams, compress)
+        variant_function(
+            pdf, metadata, document, page_streams, attachments, compress)
 
     return pdf

@@ -2,8 +2,7 @@
 
 import pytest
 
-from ..testing_utils import (
-    FakeHTML, assert_no_logs, capture_logs, resource_filename)
+from ..testing_utils import FakeHTML, assert_no_logs, capture_logs, resource_path
 
 centered_image = '''
     ________
@@ -14,6 +13,17 @@ centered_image = '''
     __BBBB__
     ________
     ________
+'''
+
+centered_image_overflow = '''
+    ________
+    ________
+    __rBBBBB
+    __BBBBBB
+    __BBBBBB
+    __BBBBBB
+    __BBBBBB
+    __BBBBBB
 '''
 
 resized_image = '''
@@ -153,6 +163,7 @@ def test_images(assert_pixels, filename, image):
       <style>
         @page { size: 8px }
         body { margin: 2px 0 0 2px; font-size: 0 }
+        img { overflow: hidden }
       </style>
       <div><img src="%s"></div>''' % filename)
 
@@ -169,9 +180,19 @@ def test_resized_images(assert_pixels, filename):
       <style>
         @page { size: 12px }
         body { margin: 2px 0 0 2px; font-size: 0 }
-        img { display: block; width: 8px; image-rendering: pixelated }
+        img { display: block; width: 8px; image-rendering: pixelated;
+              overflow: hidden }
       </style>
       <div><img src="%s"></div>''' % filename)
+
+
+def test_image_overflow(assert_pixels):
+    assert_pixels(centered_image_overflow, '''
+      <style>
+        @page { size: 8px }
+        body { margin: 2px 0 0 2px; font-size: 0 }
+      </style>
+      <div><img src="pattern.svg"></div>''')
 
 
 @assert_no_logs
@@ -416,6 +437,18 @@ def test_images_in_inline_block(assert_pixels):
 
 
 @assert_no_logs
+def test_images_transparent_text(assert_pixels):
+    # Test regression: https://github.com/Kozea/WeasyPrint/issues/2131
+    assert_pixels(centered_image, '''<style>
+        @page { size: 8px }
+        body { margin: 2px 0 0 2px; font-size: 2px; line-height: 0 }
+      </style>
+      <div style="color: #0001">123</div>
+      <img src=pattern.png>
+    ''')
+
+
+@assert_no_logs
 def test_images_shared_pattern(assert_pixels):
     # The same image is used in a repeating background,
     # then in a non-repating <img>.
@@ -478,7 +511,7 @@ def test_image_cover(assert_pixels):
       <style>
         @page { size: 8px }
         body { margin: 2px 0 0 2px; font-size: 0 }
-        img { object-fit: cover; height: 4px; width: 2px }
+        img { object-fit: cover; height: 4px; width: 2px; overflow: hidden }
       </style>
       <img src="pattern.png">''')
 
@@ -489,7 +522,7 @@ def test_image_contain(assert_pixels):
       <style>
         @page { size: 8px }
         body { margin: 1px 0 0 2px; font-size: 0 }
-        img { object-fit: contain; height: 6px; width: 4px }
+        img { object-fit: contain; height: 6px; width: 4px; overflow: hidden }
       </style>
       <img src="pattern.png">''')
 
@@ -589,5 +622,5 @@ def test_image_exif_image_orientation_keep_format():
           <style>@page { size: 10px }</style>
           <img style="display: block; image-orientation: 180deg"
                src="not-optimized-exif.jpg">''',
-        base_url=resource_filename('<inline HTML>')).write_pdf()
+        base_url=resource_path('<inline HTML>')).write_pdf()
     assert b'DCTDecode' in pdf

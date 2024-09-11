@@ -14,7 +14,6 @@ def test_absolute_split_1(assert_pixels):
         BBBBRR__________
     ''', '''
         <style>
-            @font-face {src: url(weasyprint.otf); font-family: weasyprint}
             @page {
                 size: 16px 2px;
             }
@@ -46,7 +45,6 @@ def test_absolute_split_2(assert_pixels):
         RRRR________BBBB
     ''', '''
         <style>
-            @font-face {src: url(weasyprint.otf); font-family: weasyprint}
             @page {
                 size: 16px 2px;
             }
@@ -78,7 +76,6 @@ def test_absolute_split_3(assert_pixels):
         RRRRRRRRRR______
     ''', '''
         <style>
-            @font-face {src: url(weasyprint.otf); font-family: weasyprint}
             @page {
                 size: 16px 2px;
             }
@@ -110,7 +107,6 @@ def test_absolute_split_4(assert_pixels):
         RRRRRRRRRR______
     ''', '''
         <style>
-            @font-face {src: url(weasyprint.otf); font-family: weasyprint}
             @page {
                 size: 16px 2px;
             }
@@ -142,7 +138,6 @@ def test_absolute_split_5(assert_pixels):
         BBBBRRRRRR__gggg
     ''', '''
         <style>
-            @font-face {src: url(weasyprint.otf); font-family: weasyprint}
             @page {
                 size: 16px 2px;
             }
@@ -181,7 +176,6 @@ def test_absolute_split_6(assert_pixels):
         BBBBRRRRRR______
     ''', '''
         <style>
-            @font-face {src: url(weasyprint.otf); font-family: weasyprint}
             @page {
                 size: 16px 2px;
             }
@@ -218,7 +212,6 @@ def test_absolute_split_7(assert_pixels):
         ____RRRR____gggg
     ''', '''
         <style>
-            @font-face {src: url(weasyprint.otf); font-family: weasyprint}
             @page {
                 size: 16px 2px;
             }
@@ -263,7 +256,6 @@ def test_absolute_split_8(assert_pixels):
         ______
     ''', '''
         <style>
-            @font-face {src: url(weasyprint.otf); font-family: weasyprint}
             @page {
                 margin: 2px 0;
                 size: 6px 8px;
@@ -298,7 +290,6 @@ def test_absolute_split_9(assert_pixels):
         ______
     ''', '''
         <style>
-            @font-face {src: url(weasyprint.otf); font-family: weasyprint}
             @page {
                 margin: 2px 0;
                 size: 6px 8px;
@@ -339,7 +330,6 @@ def test_absolute_split_10(assert_pixels):
         ______
     ''', '''
         <style>
-            @font-face {src: url(weasyprint.otf); font-family: weasyprint}
             @page {
                 size: 6px;
             }
@@ -377,7 +367,6 @@ def test_absolute_split_11(assert_pixels):
         __RR__
     ''', '''
         <style>
-            @font-face {src: url(weasyprint.otf); font-family: weasyprint}
             @page {
                 size: 6px;
             }
@@ -399,6 +388,57 @@ def test_absolute_split_11(assert_pixels):
     ''')
 
 
+@assert_no_logs
+def test_absolute_split_12(assert_pixels):
+    assert_pixels('''
+        BBBBBB__
+        BBBBBB__
+        ________
+        ________
+        ________
+        ________
+        ________
+        ________
+        BB______
+        BB______
+        BBRR____
+        BBRR____
+        BBRRRR__
+        BBRRRR__
+        BBRRRRRR
+        BBRRRRRR
+    ''', '''
+        <style>
+            @page {
+                size: 8px;
+            }
+            body {
+                color: blue;
+                font-family: weasyprint;
+                font-size: 2px;
+                line-height: 1;
+            }
+            div {
+                break-inside: avoid;
+            }
+            section {
+                left: 2px;
+                position: absolute;
+                color: red;
+            }
+        </style>
+        aaa
+        <div>
+          a
+          <section>x<br>xx<br>xxx</section>
+          <br>
+          a<br>
+          a<br>
+          a
+        </div>
+    ''')
+
+
 @pytest.mark.xfail
 @assert_no_logs
 def test_absolute_next_page(assert_pixels):
@@ -417,7 +457,6 @@ def test_absolute_next_page(assert_pixels):
         ________________
     ''', '''
         <style>
-            @font-face {src: url(weasyprint.otf); font-family: weasyprint}
             @page {
                 size: 16px 4px;
             }
@@ -447,7 +486,6 @@ def test_absolute_rtl_1(assert_pixels):
         ________________
     ''', '''
         <style>
-            @font-face {src: url(weasyprint.otf); font-family: weasyprint}
             @page {
                 size: 16px 3px;
             }
@@ -474,7 +512,6 @@ def test_absolute_rtl_2(assert_pixels):
         _________RRRRRR_
     ''', '''
         <style>
-            @font-face {src: url(weasyprint.otf); font-family: weasyprint}
             @page {
                 size: 16px 3px;
             }
@@ -502,7 +539,6 @@ def test_absolute_rtl_3(assert_pixels):
         RRRRRR__________
     ''', '''
         <style>
-            @font-face {src: url(weasyprint.otf); font-family: weasyprint}
             @page {
                 size: 16px 3px;
             }
@@ -531,7 +567,6 @@ def test_absolute_rtl_4(assert_pixels):
         _________RRRRRR_
     ''', '''
         <style>
-            @font-face {src: url(weasyprint.otf); font-family: weasyprint}
             @page {
                 size: 16px 3px;
             }
@@ -560,7 +595,6 @@ def test_absolute_rtl_5(assert_pixels):
         ________________
     ''', '''
         <style>
-            @font-face {src: url(weasyprint.otf); font-family: weasyprint}
             @page {
                 size: 16px 3px;
             }
@@ -594,7 +628,6 @@ def test_absolute_pages_counter(assert_pixels):
         _____B
     ''', '''
         <style>
-            @font-face {src: url(weasyprint.otf); font-family: weasyprint}
             @page {
                 font-family: weasyprint;
                 margin: 1px;
@@ -643,7 +676,6 @@ def test_absolute_pages_counter_orphans(assert_pixels):
         _____B
     ''', '''
         <style>
-            @font-face {src: url(weasyprint.otf); font-family: weasyprint}
             @page {
                 font-family: weasyprint;
                 margin: 1px;
@@ -698,7 +730,6 @@ def test_absolute_in_inline(assert_pixels):
         ______
     ''', '''
         <style>
-            @font-face {src: url(weasyprint.otf); font-family: weasyprint}
             @page {
                 margin: 1px;
                 size: 6px 9px;
@@ -747,7 +778,6 @@ def test_fixed_in_inline(assert_pixels):
         ______
     ''', '''
         <style>
-            @font-face {src: url(weasyprint.otf); font-family: weasyprint}
             @page {
                 margin: 1px;
                 size: 6px 9px;
@@ -792,4 +822,55 @@ def test_absolute_image_background(assert_pixels):
           }
         </style>
         <img src="pattern-transparent.svg" />
+    ''')
+
+
+@assert_no_logs
+def test_absolute_in_absolute_break(assert_pixels):
+    # Test regression: https://github.com/Kozea/WeasyPrint/issues/2134
+    assert_pixels('''
+        BBBB
+        BBBB
+        BBBB
+        BBBB
+        BBBB
+
+        BBBB
+        BBBB
+        BBBB
+        BBBB
+        BBBB
+
+        BBBB
+        BBBB
+        RRRR
+        RRRR
+        RRRR
+
+        RRRR
+        RRRR
+        ____
+        ____
+        ____
+    ''', '''
+        <style>
+          @page {
+            size: 4px 5px;
+          }
+          body {
+            font-size: 2px;
+            line-height: 1;
+          }
+          div {
+            position: absolute;
+            width: 100%;
+          }
+        </style>
+        <div style="background: blue">
+          <br><br><br><br>
+          <div style="background: red">
+            <br><br>
+          </div>
+        </div>
+        <br><br><br><br><br><br><br>
     ''')

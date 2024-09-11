@@ -13,21 +13,26 @@ on other functions in this module.
 """
 
 from collections import namedtuple
+from itertools import groupby
 from logging import DEBUG, WARNING
 
 import cssselect2
 import tinycss2
+import tinycss2.ast
 import tinycss2.nth
 
 from .. import CSS
 from ..logger import LOGGER, PROGRESS_LOGGER
 from ..urls import URLFetchingError, get_url_attribute, url_join
 from . import counters, media_queries
-from .computed_values import COMPUTER_FUNCTIONS, ZERO_PIXELS, compute_var
-from .properties import INHERITED, INITIAL_NOT_COMPUTED, INITIAL_VALUES
-from .utils import get_url, remove_whitespace
+from .computed_values import COMPUTER_FUNCTIONS
+from .properties import INHERITED, INITIAL_NOT_COMPUTED, INITIAL_VALUES, ZERO_PIXELS
 from .validation import preprocess_declarations
 from .validation.descriptors import preprocess_descriptors
+
+from .utils import (  # isort:skip
+    InvalidValues, Pending, check_var_function, get_url, parse_function,
+    remove_whitespace)
 
 # Reject anything not in here:
 PSEUDO_ELEMENTS = (
@@ -164,18 +169,6 @@ class StyleFor:
             element, cascaded, parent_style, pseudo_type, root_style, base_url,
             target_collector)
 
-        # The style of marker is deleted when display is different from
-        # list-item.
-        if pseudo_type is None:
-            for pseudo in (None, 'before', 'after'):
-                pseudo_style = cascaded_styles.get((element, pseudo), {})
-                if 'display' in pseudo_style:
-                    if 'list-item' in pseudo_style['display'][0]:
-                        break
-            else:
-                if (element, 'marker') in cascaded_styles:
-                    del cascaded_styles[element, 'marker']
-
     def add_page_declarations(self, page_type):
         for sheet, origin, sheet_specificity in self._sheets:
             for _rule, selector_list, declarations in sheet.page_rules:
@@ -289,9 +282,9 @@ def find_stylesheets(wrapper_element, device_media_type, url_fetcher, base_url,
                         _check_mime_type=True, media_type=device_media_type,
                         font_config=font_config, counter_style=counter_style,
                         page_rules=page_rules)
-                except URLFetchingError as exc:
-                    LOGGER.error(
-                        'Failed to load stylesheet at %s: %s', href, exc)
+                except URLFetchingError as exception:
+                    LOGGER.error('Failed to load stylesheet at %s: %s', href, exception)
+                    LOGGER.debug('Error while loading stylesheet:', exc_info=exception)
 
 
 def find_style_attributes(tree, presentational_hints=False, base_url=None):
@@ -305,7 +298,7 @@ def find_style_attributes(tree, presentational_hints=False, base_url=None):
 
     """
     def check_style_attribute(element, style_attribute):
-        declarations = tinycss2.parse_declaration_list(style_attribute)
+        declarations = tinycss2.parse_blocks_contents(style_attribute)
         return element, declarations, base_url
 
     for element in tree.iter():
@@ -601,6 +594,32 @@ def declaration_precedence(origin, importance):
         return 5
 
 
+def resolve_var(computed, token, parent_style):
+    """Return token with resolved CSS variables."""
+    if not check_var_function(token):
+        return
+
+    if token.lower_name != 'var':
+        arguments = []
+        for i, argument in enumerate(token.arguments):
+            if argument.type == 'function' and argument.lower_name == 'var':
+                arguments.extend(resolve_var(computed, argument, parent_style))
+            else:
+                arguments.append(argument)
+        token = tinycss2.ast.FunctionBlock(
+            token.source_line, token.source_column, token.name, arguments)
+        return resolve_var(computed, token, parent_style) or (token,)
+
+    args = parse_function(token)[1]
+    variable_name = args.pop(0).value.replace('-', '_')  # first arg is name
+    default = args  # next args are default value
+    computed_value = []
+    for value in (computed[variable_name] or default):
+        resolved = resolve_var(computed, value, parent_style)
+        computed_value.extend((value,) if resolved is None else resolved)
+    return computed_value
+
+
 class AnonymousStyle(dict):
     """Computed style used for anonymous boxes."""
     def __init__(self, parent_style):
@@ -678,27 +697,49 @@ class ComputedStyle(dict):
 
         if key in self.cascaded:
             # Property defined in cascaded properties.
-            keyword, computed = compute_var(key, self, parent_style)
-            value = keyword
+            value = self.cascaded[key][0]
+            pending = isinstance(value, Pending)
         else:
             # Property not defined in cascaded properties, define as inherited
             # or initial value.
-            computed = False
             if key in INHERITED or key[:2] == '__':
-                keyword = 'inherit'
+                value = 'inherit'
             else:
-                keyword = 'initial'
+                value = 'initial'
+            pending = False
 
-        if keyword == 'inherit' and parent_style is None:
+        if value == 'inherit' and parent_style is None:
             # On the root element, 'inherit' from initial values
-            keyword = 'initial'
+            value = 'initial'
 
-        if keyword == 'initial':
-            value = None if key[:2] == '__' else INITIAL_VALUES[key]
+        if pending:
+            # Property with pending values, validate them.
+            solved_tokens = []
+            for token in value.tokens:
+                tokens = resolve_var(self, token, parent_style)
+                if tokens is None:
+                    solved_tokens.append(token)
+                else:
+                    solved_tokens.extend(tokens)
+            original_key = key.replace('_', '-')
+            try:
+                value = value.solve(solved_tokens, original_key)
+            except InvalidValues:
+                if key in INHERITED and parent_style is not None:
+                    # Values in parent_style are already computed.
+                    self[key] = value = parent_style[key]
+                else:
+                    value = INITIAL_VALUES[key]
+                    if key not in INITIAL_NOT_COMPUTED:
+                        # The value is the same as when computed.
+                        self[key] = value
+
+        if value == 'initial':
+            value = [] if key[:2] == '__' else INITIAL_VALUES[key]
             if key not in INITIAL_NOT_COMPUTED:
                 # The value is the same as when computed.
                 self[key] = value
-        elif keyword == 'inherit':
+        elif value == 'inherit':
             # Values in parent_style are already computed.
             self[key] = value = parent_style[key]
 
@@ -728,7 +769,7 @@ class ComputedStyle(dict):
             # Value already computed and saved: return.
             return self[key]
 
-        if not computed and key in COMPUTER_FUNCTIONS:
+        if key in COMPUTER_FUNCTIONS:
             # Value not computed yet: compute.
             value = COMPUTER_FUNCTIONS[key](self, key, value)
 
@@ -879,33 +920,42 @@ def preprocess_stylesheet(device_media_type, base_url, stylesheet_rules,
             continue
 
         if rule.type == 'qualified-rule':
-            declarations = list(preprocess_declarations(
-                base_url, tinycss2.parse_declaration_list(rule.content)))
-            if declarations:
+            try:
                 logger_level = WARNING
-                try:
-                    selectors = cssselect2.compile_selector_list(rule.prelude)
-                    for selector in selectors:
-                        matcher.add_selector(selector, declarations)
-                        if selector.pseudo_element not in PSEUDO_ELEMENTS:
-                            if selector.pseudo_element.startswith('-'):
-                                logger_level = DEBUG
-                                raise cssselect2.SelectorError(
-                                    'ignored prefixed pseudo-element: '
-                                    f'{selector.pseudo_element}')
-                            else:
-                                raise cssselect2.SelectorError(
-                                    'unknown pseudo-element: '
-                                    f'{selector.pseudo_element}')
+                selectors_declarations = list(
+                    preprocess_declarations(
+                        base_url, tinycss2.parse_blocks_contents(rule.content),
+                        rule.prelude))
+
+                if selectors_declarations:
+                    selectors_declarations = groupby(
+                        selectors_declarations, key=lambda x: x[0])
+                    for selectors, declarations in selectors_declarations:
+                        declarations = [
+                            declaration[1] for declaration in declarations]
+                        for selector in selectors:
+                            matcher.add_selector(selector, declarations)
+                            if selector.pseudo_element not in PSEUDO_ELEMENTS:
+                                prelude = tinycss2.serialize(rule.prelude)
+                                if selector.pseudo_element.startswith('-'):
+                                    logger_level = DEBUG
+                                    raise cssselect2.SelectorError(
+                                        f"'{prelude}', "
+                                        'ignored prefixed pseudo-element: '
+                                        f'{selector.pseudo_element}')
+                                else:
+                                    raise cssselect2.SelectorError(
+                                        f"'{prelude}', "
+                                        'unknown pseudo-element: '
+                                        f'{selector.pseudo_element}')
+                        ignore_imports = True
+                else:
                     ignore_imports = True
-                except cssselect2.SelectorError as exc:
-                    LOGGER.log(
-                        logger_level,
-                        "Invalid or unsupported selector '%s', %s",
-                        tinycss2.serialize(rule.prelude), exc)
-                    continue
-            else:
-                ignore_imports = True
+            except cssselect2.SelectorError as exc:
+                LOGGER.log(
+                    logger_level,
+                    "Invalid or unsupported selector, %s", exc)
+                continue
 
         elif rule.type == 'at-rule' and rule.lower_at_keyword == 'import':
             if ignore_imports:
@@ -948,9 +998,9 @@ def preprocess_stylesheet(device_media_type, base_url, stylesheet_rules,
                         media_type=device_media_type, font_config=font_config,
                         counter_style=counter_style, matcher=matcher,
                         page_rules=page_rules)
-                except URLFetchingError as exc:
-                    LOGGER.error(
-                        'Failed to load stylesheet at %s : %s', url, exc)
+                except URLFetchingError as exception:
+                    LOGGER.error('Failed to load stylesheet at %s : %s', url, exception)
+                    LOGGER.debug('Error while loading stylesheet:', exc_info=exception)
 
         elif rule.type == 'at-rule' and rule.lower_at_keyword == 'media':
             media = media_queries.parse_media_query(rule.prelude)
@@ -986,7 +1036,7 @@ def preprocess_stylesheet(device_media_type, base_url, stylesheet_rules,
             for page_type in data:
                 specificity = page_type.pop('specificity')
                 page_type = PageType(**page_type)
-                content = tinycss2.parse_declaration_list(rule.content)
+                content = tinycss2.parse_blocks_contents(rule.content)
                 declarations = list(preprocess_declarations(base_url, content))
 
                 if declarations:
@@ -999,7 +1049,7 @@ def preprocess_stylesheet(device_media_type, base_url, stylesheet_rules,
                         continue
                     declarations = list(preprocess_declarations(
                         base_url,
-                        tinycss2.parse_declaration_list(margin_rule.content)))
+                        tinycss2.parse_blocks_contents(margin_rule.content)))
                     if declarations:
                         selector_list = [(
                             specificity, f'@{margin_rule.lower_at_keyword}',
@@ -1009,7 +1059,7 @@ def preprocess_stylesheet(device_media_type, base_url, stylesheet_rules,
 
         elif rule.type == 'at-rule' and rule.lower_at_keyword == 'font-face':
             ignore_imports = True
-            content = tinycss2.parse_declaration_list(rule.content)
+            content = tinycss2.parse_blocks_contents(rule.content)
             rule_descriptors = dict(
                 preprocess_descriptors('font-face', base_url, content))
             for key in ('src', 'font_family'):
@@ -1036,7 +1086,7 @@ def preprocess_stylesheet(device_media_type, base_url, stylesheet_rules,
                 continue
 
             ignore_imports = True
-            content = tinycss2.parse_declaration_list(rule.content)
+            content = tinycss2.parse_blocks_contents(rule.content)
             counter = {
                 'system': None,
                 'negative': None,

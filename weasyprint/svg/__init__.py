@@ -8,17 +8,18 @@ from xml.etree import ElementTree
 from cssselect2 import ElementWrapper
 
 from ..urls import get_url_attribute
-from .bounding_box import (
-    bounding_box, extend_bounding_box, is_valid_bounding_box)
 from .css import parse_declarations, parse_stylesheets
-from .defs import (
-    apply_filters, clip_path, draw_gradient_or_pattern, paint_mask, use)
+from .defs import apply_filters, clip_path, draw_gradient_or_pattern, paint_mask, use
 from .images import image, svg
 from .path import path
 from .shapes import circle, ellipse, line, polygon, polyline, rect
 from .text import text
-from .utils import (
-    PointError, color, normalize, parse_url, preserve_ratio, size, transform)
+
+from .bounding_box import (  # isort:skip
+    EMPTY_BOUNDING_BOX, bounding_box, extend_bounding_box, is_valid_bounding_box)
+from .utils import (  # isort:skip
+    PointError, alpha_value, color, normalize, parse_url, preserve_ratio, size,
+    transform)
 
 TAGS = {
     'a': text,
@@ -119,69 +120,78 @@ class Node:
         """Text after the XML node."""
         return self._etree_node.tail
 
+    @property
+    def display(self):
+        """Whether node should be displayed."""
+        return self.get('display') != 'none'
+
+    @property
+    def visible(self):
+        """Whether node is visible."""
+        return self.display and self.get('visibility') != 'hidden'
+
+    def cascade(self, child):
+        """Apply CSS cascade and other related operations to given child."""
+        wrapper = child._wrapper
+
+        # Cascade
+        for key, value in self.attrib.items():
+            if key not in NOT_INHERITED_ATTRIBUTES:
+                if key not in child.attrib:
+                    child.attrib[key] = value
+
+        # Apply style attribute
+        if style_attr := child.get('style'):
+            normal_attr, important_attr = parse_declarations(style_attr)
+        else:
+            normal_attr, important_attr = [], []
+        normal_matcher, important_matcher = self._style
+        normal = [rule[-1] for rule in normal_matcher.match(wrapper)]
+        important = [rule[-1] for rule in important_matcher.match(wrapper)]
+        for declarations_list in (normal, [normal_attr], important, [important_attr]):
+            for declarations in declarations_list:
+                for name, value in declarations:
+                    child.attrib[name] = value.strip()
+
+        # Replace 'currentColor' value
+        for key in COLOR_ATTRIBUTES:
+            if child.get(key) == 'currentColor':
+                child.attrib[key] = child.get('color', 'black')
+
+        # Handle 'inherit' values
+        for key, value in child.attrib.copy().items():
+            if value == 'inherit':
+                value = self.get(key)
+                if value is None:
+                    del child.attrib[key]
+                else:
+                    child.attrib[key] = value
+
+        # Fix text in text tags
+        if child.tag in ('text', 'textPath', 'a'):
+            children, _ = child.text_children(
+                wrapper, trailing_space=True, text_root=True)
+            child._wrapper.etree_children = [
+                child._etree_node for child in children]
+
+
     def __iter__(self):
         """Yield node children, handling cascade."""
         for wrapper in self._wrapper:
             child = Node(wrapper, self._style)
-
-            # Cascade
-            for key, value in self.attrib.items():
-                if key not in NOT_INHERITED_ATTRIBUTES:
-                    if key not in child.attrib:
-                        child.attrib[key] = value
-
-            # Apply style attribute
-            style_attr = child.get('style')
-            if style_attr:
-                normal_attr, important_attr = parse_declarations(style_attr)
-            else:
-                normal_attr, important_attr = [], []
-            normal_matcher, important_matcher = self._style
-            normal = [rule[-1] for rule in normal_matcher.match(wrapper)]
-            important = [rule[-1] for rule in important_matcher.match(wrapper)]
-            declarations_lists = (
-                normal, [normal_attr], important, [important_attr])
-            for declarations_list in declarations_lists:
-                for declarations in declarations_list:
-                    for name, value in declarations:
-                        child.attrib[name] = value.strip()
-
-            # Replace 'currentColor' value
-            for key in COLOR_ATTRIBUTES:
-                if child.get(key) == 'currentColor':
-                    child.attrib[key] = child.get('color', 'black')
-
-            # Handle 'inherit' values
-            for key, value in child.attrib.copy().items():
-                if value == 'inherit':
-                    value = self.get(key)
-                    if value is None:
-                        del child.attrib[key]
-                    else:
-                        child.attrib[key] = value
-
-            # Fix text in text tags
-            if child.tag in ('text', 'textPath', 'a'):
-                children, _ = child.text_children(
-                    wrapper, trailing_space=True, text_root=True)
-                child._wrapper.etree_children = [
-                    child._etree_node for child in children]
-
+            self.cascade(child)
             yield child
 
     def get_viewbox(self):
         """Get node viewBox as a tuple of floats."""
         viewbox = self.get('viewBox')
         if viewbox:
-            return tuple(
-                float(number) for number in normalize(viewbox).split())
+            return tuple(float(number) for number in normalize(viewbox).split())
 
     def get_href(self, base_url):
         """Get the href attribute, with or without a namespace."""
         for attr_name in ('{http://www.w3.org/1999/xlink}href', 'href'):
-            url = get_url_attribute(
-                self, attr_name, base_url, allow_relative=True)
-            if url:
+            if url := get_url_attribute(self, attr_name, base_url, allow_relative=True):
                 return url
 
     def del_href(self):
@@ -229,7 +239,8 @@ class Node:
             self.pop_rotation(original_rotate, rotate)
         if self.text:
             trailing_space = self.text.endswith(' ')
-        for child_element in element.iter_children():
+        element_children = tuple(element.iter_children())
+        for child_element in element_children:
             child = child_element.etree_element
             if child.tag in ('{http://www.w3.org/2000/svg}tref', 'tref'):
                 child_node = Node(child_element, self._style)
@@ -250,13 +261,16 @@ class Node:
             if original_rotate and 'rotate' not in child_node:
                 child_node.pop_rotation(original_rotate, rotate)
             children.append(child_node)
-            if child.tail:
+            tail = self.process_whitespace(child.tail, preserve)
+            if text_root and child_element is element_children[-1]:
+                if not preserve:
+                    tail = tail.rstrip(' ')
+            if tail:
                 anonymous_etree = ElementTree.Element(
                     '{http://www.w3.org/2000/svg}tspan')
                 anonymous = Node(
                     ElementWrapper.from_xml_root(anonymous_etree), self._style)
-                anonymous._etree_node.text = self.process_whitespace(
-                    child.tail, preserve)
+                anonymous._etree_node.text = tail
                 if original_rotate:
                     anonymous.pop_rotation(original_rotate, rotate)
                 if trailing_space and not preserve:
@@ -301,12 +315,6 @@ class SVG:
         style = parse_stylesheets(wrapper, url)
         self.tree = Node(wrapper, style)
         self.url = url
-
-        # Replace 'currentColor' value
-        for key in COLOR_ATTRIBUTES:
-            if self.tree.get(key) == 'currentColor':
-                self.tree.attrib[key] = self.tree.get('color', 'black')
-
         self.filters = {}
         self.gradients = {}
         self.images = {}
@@ -321,6 +329,7 @@ class SVG:
         self.cursor_d_position = [0, 0]
         self.text_path_width = 0
 
+        self.tree.cascade(self.tree)
         self.parse_defs(self.tree)
         self.inherit_defs()
 
@@ -381,11 +390,13 @@ class SVG:
 
     def draw_node(self, node, font_size, fill_stroke=True):
         """Draw a node."""
-        if node.tag == 'defs':
+        if node.tag in ('defs', 'symbol'):
             return
 
         # Update font size
         font_size = size(node.get('font-size', '1em'), font_size, font_size)
+
+        original_streams = []
 
         if fill_stroke:
             self.stream.push_state()
@@ -399,9 +410,9 @@ class SVG:
         self.transform(node.get('transform'), font_size)
 
         # Create substream for opacity
-        opacity = float(node.get('opacity', 1))
+        opacity = alpha_value(node.get('opacity', 1))
         if fill_stroke and 0 <= opacity < 1:
-            original_stream = self.stream
+            original_streams.append(self.stream)
             box = self.calculate_bounding_box(node, font_size)
             if not is_valid_bounding_box(box):
                 box = (0, 0, self.inner_width, self.inner_height)
@@ -430,26 +441,35 @@ class SVG:
             if new_ctm.determinant:
                 self.stream.transform(*(old_ctm @ new_ctm.invert).values)
 
-        # Manage display and visibility
-        display = node.get('display') != 'none'
-        visible = display and (node.get('visibility') != 'hidden')
-
         # Handle text anchor
-        text_anchor = node.get('text-anchor')
+        if node.tag == 'text':
+            text_anchor = node.get('text-anchor')
+            children = tuple(node)
+            if children and not node.text:
+                text_anchor = children[0].get('text-anchor')
         if node.tag == 'text' and text_anchor in ('middle', 'end'):
             group = self.stream.add_group(0, 0, 0, 0)  # BBox set after drawing
-            original_stream, self.stream = self.stream, group
+            original_streams.append(self.stream)
+            self.stream = group
+
+        # Set text bounding box
+        if node.display and TAGS.get(node.tag) == text:
+            node.text_bounding_box = EMPTY_BOUNDING_BOX
 
         # Draw node
-        if visible and node.tag in TAGS:
+        if node.visible and node.tag in TAGS:
             with suppress(PointError):
                 TAGS[node.tag](self, node, font_size)
 
         # Draw node children
-        if display and node.tag not in DEF_TYPES:
+        if node.display and node.tag not in DEF_TYPES:
             for child in node:
                 self.draw_node(child, font_size, fill_stroke)
-                if node.tag in ('text', 'tspan'):
+                visible_text_child = (
+                    TAGS.get(node.tag) == text and
+                    TAGS.get(child.tag) == text and
+                    child.visible)
+                if visible_text_child:
                     if not is_valid_bounding_box(child.text_bounding_box):
                         continue
                     x1, y1 = child.text_bounding_box[:2]
@@ -461,11 +481,14 @@ class SVG:
         # Handle text anchor
         if node.tag == 'text' and text_anchor in ('middle', 'end'):
             group_id = self.stream.id
-            self.stream = original_stream
+            self.stream = original_streams.pop()
             self.stream.push_state()
             if is_valid_bounding_box(node.text_bounding_box):
                 x, y, width, height = node.text_bounding_box
-                group.extra['BBox'][:] = (x, y, x + width, y + height)
+                # Add extra space to include ink extents
+                group.extra['BBox'][:] = (
+                    x - font_size, y - font_size,
+                    x + width + font_size, y + height + font_size)
                 x_align = width / 2 if text_anchor == 'middle' else width
                 self.stream.transform(e=-x_align)
             self.stream.draw_x_object(group_id)
@@ -486,7 +509,7 @@ class SVG:
         # Apply opacity stream and restore original stream
         if fill_stroke and 0 <= opacity < 1:
             group_id = self.stream.id
-            self.stream = original_stream
+            self.stream = original_streams.pop()
             self.stream.set_alpha(opacity, stroke=True, fill=True)
             self.stream.draw_x_object(group_id)
 
@@ -531,22 +554,19 @@ class SVG:
                 position = 'end'
 
             # Draw marker
-            marker = markers[position]
-            if not marker:
+            if not (marker_node := self.markers.get(markers[position])):
                 position = 'mid' if angles else 'start'
                 continue
-
-            marker_node = self.markers.get(marker)
 
             # Calculate position, scale and clipping
             translate_x, translate_y = self.point(
                 marker_node.get('refX'), marker_node.get('refY'),
                 font_size)
+            marker_width, marker_height = self.point(
+                marker_node.get('markerWidth', 3),
+                marker_node.get('markerHeight', 3),
+                font_size)
             if 'viewBox' in marker_node.attrib:
-                marker_width, marker_height = self.point(
-                    marker_node.get('markerWidth', 3),
-                    marker_node.get('markerHeight', 3),
-                    font_size)
                 scale_x, scale_y, _, _ = preserve_ratio(
                     self, marker_node, font_size, marker_width, marker_height)
 
@@ -576,19 +596,8 @@ class SVG:
                     clip_x, clip_y,
                     marker_width / scale_x, marker_height / scale_y)
             else:
-                marker_width, marker_height = self.point(
-                    marker_node.get('markerWidth', 3),
-                    marker_node.get('markerHeight', 3),
-                    font_size)
-                box = self.calculate_bounding_box(marker_node, font_size)
-                if is_valid_bounding_box(box):
-                    scale_x = scale_y = min(
-                        marker_width / box[2], marker_height / box[3])
-                    translate_x /= scale_x
-                    translate_y /= scale_y
-                else:
-                    scale_x = scale_y = 1
-                clip_box = None
+                scale_x = scale_y = 1
+                clip_box = (0, 0, marker_width, marker_height)
 
             # Scale
             if marker_node.get('markerUnits') != 'userSpaceOnUse':
@@ -614,7 +623,7 @@ class SVG:
                 self.stream.transform(e=-translate_x, f=-translate_y)
 
                 overflow = marker_node.get('overflow', 'hidden')
-                if clip_box and overflow in ('hidden', 'scroll'):
+                if overflow in ('hidden', 'scroll'):
                     self.stream.rectangle(*clip_box)
                     self.stream.clip()
                     self.stream.end()
@@ -648,7 +657,7 @@ class SVG:
 
         # Get fill data
         fill_source, fill_color = self.get_paint(node.get('fill', 'black'))
-        fill_opacity = float(node.get('fill-opacity', 1))
+        fill_opacity = alpha_value(node.get('fill-opacity', 1))
         fill_drawn = draw_gradient_or_pattern(
             self, node, fill_source, font_size, fill_opacity, stroke=False)
         if fill_color and not fill_drawn:
@@ -659,7 +668,7 @@ class SVG:
 
         # Get stroke data
         stroke_source, stroke_color = self.get_paint(node.get('stroke'))
-        stroke_opacity = float(node.get('stroke-opacity', 1))
+        stroke_opacity = alpha_value(node.get('stroke-opacity', 1))
         stroke_drawn = draw_gradient_or_pattern(
             self, node, stroke_source, font_size, stroke_opacity, stroke=True)
         if stroke_color and not stroke_drawn:

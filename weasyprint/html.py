@@ -10,7 +10,7 @@ are images with intrinsic dimensions.
 try:
     # Available in Python 3.9+
     from importlib.resources import files
-except ImportError:
+except ImportError:  # pragma: no cover
     # Deprecated in Python 3.11+
     from importlib.resources import read_text
 else:
@@ -19,7 +19,7 @@ else:
 
 import re
 
-from . import CSS, css
+from . import CSS, Attachment, css
 from .css import get_child_text
 from .css.counters import CounterStyle
 from .formatting_structure import boxes
@@ -221,6 +221,7 @@ def handle_svg(element, box, get_image_from_uri, base_url):
         image = SVGImage(element, base_url, url_fetcher, context)
     except Exception as exception:  # pragma: no cover
         LOGGER.error('Failed to load inline SVG: %s', exception)
+        LOGGER.debug('Error while loading inline SVG:', exc_info=exception)
         return []
     else:
         return [make_replaced_box(element, box, image)]
@@ -281,11 +282,22 @@ def get_html_metadata(html):
             if url is None:
                 LOGGER.error('Missing href in <link rel="attachment">')
             else:
-                attachments.append((url, attachment_title))
-    return dict(title=title, description=description, generator=generator,
-                keywords=keywords, authors=authors,
-                created=created, modified=modified,
-                attachments=attachments, lang=lang, custom=custom)
+                attachment = Attachment(
+                    url=url, description=attachment_title,
+                    url_fetcher=html.url_fetcher)
+                attachments.append(attachment)
+    return {
+        'title': title,
+        'description': description,
+        'generator': generator,
+        'keywords': keywords,
+        'authors': authors,
+        'created': created,
+        'modified': modified,
+        'attachments': attachments,
+        'lang': lang,
+        'custom': custom,
+    }
 
 
 def strip_whitespace(string):

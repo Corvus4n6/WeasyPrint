@@ -3,21 +3,20 @@
 from math import floor, inf
 
 from .absolute import absolute_layout
-from .percent import resolve_percentages
+from .percent import percentage, resolve_percentages
 
 
 def columns_layout(context, box, bottom_space, skip_stack, containing_block,
                    page_is_empty, absolute_boxes, fixed_boxes,
                    adjoining_margins):
     """Lay out a multi-column ``box``."""
-    from .block import (
+    from .block import (  # isort:skip
         block_box_layout, block_level_layout, block_level_width,
         collapse_margin, remove_placeholders)
 
     style = box.style
     width = style['column_width']
     count = style['column_count']
-    gap = style['column_gap']
     height = style['height']
     original_bottom_space = bottom_space
     context.in_column = True
@@ -42,6 +41,12 @@ def columns_layout(context, box, bottom_space, skip_stack, containing_block,
     # needs the size of this block to know its own size
     block_level_width(box, containing_block)
 
+    if style['column_gap'] == 'normal':
+        # 1em because in column context
+        gap = style['font_size']
+    else:
+        gap = percentage(style['column_gap'], box.width)
+
     # Define the number of columns and their widths
     if width == 'auto' and count != 'auto':
         width = max(0, box.width - (count - 1) * gap) / count
@@ -49,7 +54,8 @@ def columns_layout(context, box, bottom_space, skip_stack, containing_block,
         count = max(1, int(floor((box.width + gap) / (width + gap))))
         width = (box.width + gap) / count - gap
     else:  # overconstrained, with width != 'auto' and count != 'auto'
-        count = min(count, int(floor((box.width + gap) / (width + gap))))
+        count = max(
+            1, min(count, int(floor((box.width + gap) / (width + gap)))))
         width = (box.width + gap) / count - gap
 
     # Handle column-span property with the following structure:
@@ -300,6 +306,7 @@ def columns_layout(context, box, bottom_space, skip_stack, containing_block,
                     containing_block, original_page_is_empty, absolute_boxes,
                     fixed_boxes, None, discard=False, max_lines=None))
             if new_child is None:
+                columns = []
                 break_page = True
                 break
             next_page = column_next_page

@@ -455,9 +455,9 @@ def test_flex_item_min_height():
 @assert_no_logs
 def test_flex_auto_margin():
     # Regression test for https://github.com/Kozea/WeasyPrint/issues/800
-    page, = render_pages('<div style="display: flex; margin: auto">')
+    page, = render_pages('<div id="div1" style="display: flex; margin: auto">')
     page, = render_pages(
-        '<div style="display: flex; flex-direction: column; margin: auto">')
+        '<div id="div2" style="display: flex; flex-direction: column; margin: auto">')
 
 
 @assert_no_logs
@@ -481,7 +481,6 @@ def test_flex_align_content(align, height, y1, y2):
     # Regression test for https://github.com/Kozea/WeasyPrint/issues/811
     page, = render_pages('''
       <style>
-        @font-face { src: url(weasyprint.otf); font-family: weasyprint }
         article {
           align-content: %s;
           display: flex;
@@ -545,3 +544,214 @@ def test_flex_absolute():
       <div style="display: flex; position: absolute">
         <div>a</div>
       </div>''')
+
+
+@assert_no_logs
+def test_flex_percent_height():
+    page, = render_pages('''
+      <style>
+        .a { height: 10px; width: 10px; }
+        .b { height: 10%; width: 100%; display: flex; flex-direction: column; }
+      </style>
+      <div class="a"">
+        <div class="b"></div>
+      </div>''')
+    html, = page.children
+    body, = html.children
+    a, = body.children
+    b, = a.children
+    assert a.height == 10
+    assert b.height == 1
+
+
+@assert_no_logs
+def test_flex_percent_height_auto():
+    # Regression test for https://github.com/Kozea/WeasyPrint/issues/2146
+    page, = render_pages('''
+      <style>
+        .a { width: 10px; }
+        .b { height: 10%; width: 100%; display: flex; flex-direction: column; }
+      </style>
+      <div class="a"">
+        <div class="b"></div>
+      </div>''')
+
+
+@assert_no_logs
+def test_flex_break_inside_avoid():
+    # Regression test for https://github.com/Kozea/WeasyPrint/issues/2183
+    page1, page2= render_pages('''
+      <style>
+        @page { size: 6px 4px }
+        html { font-family: weasyprint; font-size: 2px }
+      </style>
+      <article style="display: flex; flex-wrap: wrap">
+        <div>ABC</div>
+        <div style="break-inside: avoid">abc def</div>
+      </article>''')
+    html, = page1.children
+    body, = html.children
+    article, = body.children
+    div, = article.children
+    html, = page2.children
+    body, = html.children
+    article, = body.children
+    div, = article.children
+
+
+@assert_no_logs
+def test_flex_absolute_content():
+    # Regression test for https://github.com/Kozea/WeasyPrint/issues/996
+    page, = render_pages('''
+      <section style="display: flex; position: relative">
+         <h1 style="position: absolute; top: 0; right: 0">TEST</h1>
+         <p>Hello world!</p>
+      </section>''')
+    html, = page.children
+    body, = html.children
+    section, = body.children
+    h1, p = section.children
+    assert h1.position_x != 0
+    assert h1.position_y == 0
+    assert p.position_x == 0
+    assert p.position_y == 0
+
+
+@assert_no_logs
+def test_flex_column_height():
+    # Regression test for https://github.com/Kozea/WeasyPrint/issues/2222
+    page, = render_pages("""
+  <section style="display: flex; width: 300px">
+    <article style="display: flex; flex-direction: column" id="a1">
+      <div>
+        Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do
+        eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut
+        enim ad minim veniam, quis nostrud exercitation ullamco laboris
+        nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor
+        in reprehenderit in voluptate velit esse cillum dolore eu fugiat
+        nulla pariatur. Excepteur sint occaecat cupidatat non proident,
+        sunt in culpa qui officia deserunt mollit anim id est laborum.
+      </div>
+    </article>
+    <article style="display: flex; flex-direction: column" id="a2">
+      <div>
+        Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do
+        eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut
+        enim ad minim veniam, quis nostrud exercitation ullamco laboris
+        nisi ut aliquip ex ea commodo consequat. Duis aute irure dolor
+        in reprehenderit in voluptate velit esse cillum dolore eu fugiat
+        nulla pariatur. Excepteur sint occaecat cupidatat non proident,
+        sunt in culpa qui officia deserunt mollit anim id est laborum.
+      </div>
+    </article>
+  </section>
+    """)
+    html, = page.children
+    body, = html.children
+    section, = body.children
+    a1, a2 = section.children
+    assert a1.height == section.height
+    assert a2.height == section.height
+
+
+@assert_no_logs
+def test_flex_column_height2():
+    # Another regression test for
+    # https://github.com/Kozea/WeasyPrint/issues/2222
+    page, = render_pages("""
+  <section style="display: flex; flex-direction: column; width: 300px">
+    <article style="margin: 5px" id="a1">
+      Question 1?  With quite a lot of extra text,
+      which should not overflow in the PDF, we hope.
+    </article>
+    <article style="margin: 5px" id="a2">
+      Answer 1.  With quite a lot of extra text,
+      which should not overflow in the PDF, we hope?
+    </article>
+  </section>
+    """)
+    html, = page.children
+    body, = html.children
+    section, = body.children
+    a1, a2 = section.children
+    assert section.height == (a1.height + a2.height
+                              + a1.margin_top + a1.margin_bottom
+                              + a2.margin_top + a2.margin_bottom)
+
+
+@assert_no_logs
+def test_flex_column_width():
+    # Regression test for https://github.com/Kozea/WeasyPrint/issues/1171
+    page, = render_pages("""
+    <style>
+      #paper {
+          width: 500px;
+          height: 400px;
+          display: flex;
+          flex-direction: column;
+      }
+      #content {
+          width: 100%;
+
+          display: flex;
+          flex-direction: column;
+          flex: auto;
+          justify-content: space-between;
+      }
+      #header {
+          width: 100%;
+          height: 50px;
+      }
+    </style>
+    <div id="paper">
+      <div id="header" style="background-color:lightblue">Header part,
+          should be full width, 50px height</div>
+
+      <div id="content">
+        <div style="background-color:orange" class="toppart">
+          Middle part, should be 100% width, blank space should follow
+          thanks to justify-items: between.
+        </div>
+        <div class="bottompart" style="background-color:yellow">
+          Bottom part. Should be 100% width, blank space before.
+        </div>
+      </div>
+    </div>
+    """)
+    html, = page.children
+    body, = html.children
+    paper, = body.children
+    header, content = paper.children
+    toppart, bottompart = content.children
+    assert header.width == paper.width
+    assert content.width == paper.width
+    assert toppart.width == paper.width
+    assert bottompart.position_y > toppart.position_y + toppart.height
+
+
+@assert_no_logs
+def test_flex_auto_margin2():
+    # Regression test for https://github.com/Kozea/WeasyPrint/issues/2054
+    page, = render_pages('''
+<style>
+  #outer {
+    background: red;
+  }
+  #inner {
+    margin: auto;
+    display: flex;
+    width: 160px;
+    height: 160px;
+    background: black;
+  }
+</style>
+
+<div id="outer">
+  <div id="inner"></div>
+</div>
+''')
+    html, = page.children
+    body, = html.children
+    outer, = body.children
+    inner, = outer.children
+    assert inner.margin_left != 0

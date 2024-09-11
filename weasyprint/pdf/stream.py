@@ -1,194 +1,11 @@
 """PDF stream."""
 
-import io
-from functools import lru_cache
-from hashlib import md5
-
 import pydyf
-from fontTools import subset
-from fontTools.ttLib import TTFont, TTLibError, ttFont
-from fontTools.varLib.mutator import instantiateVariableFont
 
-from ..logger import LOGGER
 from ..matrix import Matrix
-from ..text.ffi import ffi, harfbuzz, pango, units_to_double
-
-
-class Font:
-    def __init__(self, pango_font):
-        hb_font = pango.pango_font_get_hb_font(pango_font)
-        hb_face = harfbuzz.hb_font_get_face(hb_font)
-        hb_blob = ffi.gc(
-            harfbuzz.hb_face_reference_blob(hb_face),
-            harfbuzz.hb_blob_destroy)
-        with ffi.new('unsigned int *') as length:
-            hb_data = harfbuzz.hb_blob_get_data(hb_blob, length)
-            self.file_content = ffi.unpack(hb_data, int(length[0]))
-        self.index = harfbuzz.hb_face_get_index(hb_face)
-
-        pango_metrics = pango.pango_font_get_metrics(pango_font, ffi.NULL)
-        self.description = description = ffi.gc(
-            pango.pango_font_describe(pango_font),
-            pango.pango_font_description_free)
-        self.font_size = pango.pango_font_description_get_size(description)
-        self.style = pango.pango_font_description_get_style(description)
-        self.family = ffi.string(
-            pango.pango_font_description_get_family(description))
-        description_string = ffi.string(
-            pango.pango_font_description_to_string(description))
-        # Never use the built-in hash function here: it’s not stable
-        self.hash = ''.join(
-            chr(65 + letter % 26) for letter
-            in md5(description_string).digest()[:6])
-
-        # Name
-        fields = description_string.split(b' ')
-        if fields and b'=' in fields[-1]:
-            fields.pop()  # Remove variations
-        if fields:
-            fields.pop()  # Remove font size
-        else:
-            fields = [b'Unknown']
-        self.name = b'/' + self.hash.encode() + b'+' + b'-'.join(fields)
-
-        # Ascent & descent
-        if self.font_size:
-            self.ascent = int(
-                pango.pango_font_metrics_get_ascent(pango_metrics) /
-                self.font_size * 1000)
-            self.descent = -int(
-                pango.pango_font_metrics_get_descent(pango_metrics) /
-                self.font_size * 1000)
-        else:
-            self.ascent = self.descent = 0
-
-        # Fonttools
-        full_font = io.BytesIO(self.file_content)
-        try:
-            self.ttfont = TTFont(full_font, fontNumber=self.index)
-        except Exception:
-            LOGGER.warning('Unable to read font')
-            self.ttfont = None
-            self.bitmap = False
-        else:
-            self.bitmap = (
-                'EBDT' in self.ttfont and
-                'EBLC' in self.ttfont and (
-                    'glyf' not in self.ttfont or
-                    not self.ttfont['glyf'].glyphs))
-
-        # Various properties
-        self.italic_angle = 0  # TODO: this should be different
-        self.upem = harfbuzz.hb_face_get_upem(hb_face)
-        self.png = harfbuzz.hb_ot_color_has_png(hb_face)
-        self.svg = harfbuzz.hb_ot_color_has_svg(hb_face)
-        self.stemv = 80
-        self.stemh = 80
-        self.widths = {}
-        self.cmap = {}
-        self.used_in_forms = False
-
-        # Font flags
-        self.flags = 2 ** (3 - 1)  # Symbolic, custom character set
-        if self.style:
-            self.flags += 2 ** (7 - 1)  # Italic
-        if b'Serif' in fields:
-            self.flags += 2 ** (2 - 1)  # Serif
-        widths = self.widths.values()
-        if len(widths) > 1 and len(set(widths)) == 1:
-            self.flags += 2 ** (1 - 1)  # FixedPitch
-
-    def clean(self, cmap, hinting):
-        if self.ttfont is None:
-            return
-
-        # Subset font
-        if cmap:
-            optimized_font = io.BytesIO()
-            options = subset.Options(
-                retain_gids=True, passthrough_tables=True,
-                ignore_missing_glyphs=True, hinting=hinting,
-                desubroutinize=True)
-            options.drop_tables += ['GSUB', 'GPOS', 'SVG']
-            subsetter = subset.Subsetter(options)
-            subsetter.populate(gids=cmap)
-            try:
-                subsetter.subset(self.ttfont)
-            except TTLibError:
-                LOGGER.warning('Unable to optimize font')
-            else:
-                self.ttfont.save(optimized_font)
-                self.file_content = optimized_font.getvalue()
-
-        # Transform variable into static font
-        if 'fvar' in self.ttfont:
-            variations = pango.pango_font_description_get_variations(
-                self.description)
-            if variations == ffi.NULL:
-                variations = {}
-            else:
-                variations = {
-                    part.split('=')[0]: float(part.split('=')[1])
-                    for part in ffi.string(variations).decode().split(',')}
-            if 'wght' not in variations:
-                variations['wght'] = pango.pango_font_description_get_weight(
-                    self.description)
-            if 'opsz' not in variations:
-                variations['opsz'] = units_to_double(self.font_size)
-            if 'slnt' not in variations:
-                slnt = 0
-                if self.style == 1:
-                    for axe in self.ttfont['fvar'].axes:
-                        if axe.axisTag == 'slnt':
-                            if axe.maxValue == 0:
-                                slnt = axe.minValue
-                            else:
-                                slnt = axe.maxValue
-                            break
-                variations['slnt'] = slnt
-            if 'ital' not in variations:
-                variations['ital'] = int(self.style == 2)
-            partial_font = io.BytesIO()
-            try:
-                ttfont = instantiateVariableFont(self.ttfont, variations)
-                for key, (advance, bearing) in ttfont['hmtx'].metrics.items():
-                    if advance < 0:
-                        ttfont['hmtx'].metrics[key] = (0, bearing)
-                ttfont.save(partial_font)
-            except Exception:
-                LOGGER.warning('Unable to mutate variable font')
-            else:
-                self.ttfont = ttfont
-                self.file_content = partial_font.getvalue()
-
-        if not (self.png or self.svg):
-            return
-
-        try:
-            # Add empty glyphs instead of PNG or SVG emojis
-            if 'loca' not in self.ttfont or 'glyf' not in self.ttfont:
-                self.ttfont['loca'] = ttFont.getTableClass('loca')()
-                self.ttfont['glyf'] = ttFont.getTableClass('glyf')()
-                self.ttfont['glyf'].glyphOrder = self.ttfont.getGlyphOrder()
-                self.ttfont['glyf'].glyphs = {
-                    name: ttFont.getTableModule('glyf').Glyph()
-                    for name in self.ttfont['glyf'].glyphOrder}
-            else:
-                for glyph in self.ttfont['glyf'].glyphs:
-                    self.ttfont['glyf'][glyph] = (
-                        ttFont.getTableModule('glyf').Glyph())
-            for table_name in ('CBDT', 'CBLC', 'SVG '):
-                if table_name in self.ttfont:
-                    del self.ttfont[table_name]
-            output_font = io.BytesIO()
-            self.ttfont.save(output_font)
-            self.file_content = output_font.getvalue()
-        except TTLibError:
-            LOGGER.warning('Unable to save emoji font')
-
-    @property
-    def type(self):
-        return 'otf' if self.file_content[:4] == b'OTTO' else 'ttf'
+from ..text.ffi import ffi
+from ..text.fonts import get_pango_font_key
+from .fonts import Font
 
 
 class Stream(pydyf.Stream):
@@ -236,7 +53,7 @@ class Stream(pydyf.Stream):
         assert self._ctm_stack
 
     def transform(self, a=1, b=0, c=0, d=1, e=0, f=0):
-        super().transform(a, b, c, d, e, f)
+        super().set_matrix(a, b, c, d, e, f)
         self._ctm_stack[-1] = Matrix(a, b, c, d, e, f) @ self.ctm
 
     def begin_text(self):
@@ -295,13 +112,13 @@ class Stream(pydyf.Stream):
                     self._states[key] = pydyf.Dictionary({'ca': alpha})
                 super().set_state(key)
 
-    def set_alpha_state(self, x, y, width, height):
+    def set_alpha_state(self, x, y, width, height, mode='luminosity'):
         alpha_stream = self.add_group(x, y, width, height)
         alpha_state = pydyf.Dictionary({
             'Type': '/ExtGState',
             'SMask': pydyf.Dictionary({
                 'Type': '/Mask',
-                'S': '/Luminosity',
+                'S': f'/{mode.capitalize()}',
                 'G': alpha_stream,
             }),
             'ca': 1,
@@ -316,15 +133,8 @@ class Stream(pydyf.Stream):
             'BM': f'/{mode}',
         }))
 
-    @lru_cache()
     def add_font(self, pango_font):
-        description = pango.pango_font_describe(pango_font)
-        mask = (
-            pango.PANGO_FONT_MASK_SIZE +
-            pango.PANGO_FONT_MASK_GRAVITY)
-        pango.pango_font_description_unset_fields(description, mask)
-        key = pango.pango_font_description_hash(description)
-        pango.pango_font_description_free(description)
+        key = get_pango_font_key(pango_font)
         if key not in self._fonts:
             self._fonts[key] = Font(pango_font)
         return self._fonts[key]

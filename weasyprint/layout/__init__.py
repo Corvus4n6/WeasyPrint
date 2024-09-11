@@ -245,9 +245,13 @@ class LayoutContext:
         self.dictionaries = {}
 
     def overflows_page(self, bottom_space, position_y):
+        return self.overflows(self.page_bottom - bottom_space, position_y)
+
+    @staticmethod
+    def overflows(bottom, position_y):
         # Use a small fudge factor to avoid floating numbers errors.
         # The 1e-9 value comes from PEP 485.
-        return position_y > (self.page_bottom - bottom_space) * (1 + 1e-9)
+        return position_y > bottom * (1 + 1e-9)
 
     def create_block_formatting_context(self):
         self.excluded_shapes = []
@@ -316,10 +320,9 @@ class LayoutContext:
                         for (string_name, _) in element.style['string_set']:
                             if string_name == name:
                                 return first_string
-                    if isinstance(element, boxes.ParentBox):
-                        if element.children:
-                            element = element.children[0]
-                            continue
+                    if element.children:
+                        element = element.children[0]
+                        continue
                     break
             elif keyword == 'last':
                 return last_string
@@ -376,4 +379,6 @@ class LayoutContext:
             return overflow
         else:
             self.current_footnote_area.height = 0
+            if not self.in_column:
+                self.page_bottom -= self.current_footnote_area.margin_height()
             return False

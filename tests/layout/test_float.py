@@ -1,9 +1,10 @@
 """Tests for floating boxes layout."""
 
 import pytest
+
 from weasyprint.formatting_structure import boxes
 
-from .testing_utils import assert_no_logs, render_pages
+from ..testing_utils import assert_no_logs, render_pages
 
 
 def outer_area(box):
@@ -114,7 +115,6 @@ def test_floats_5():
     # c414-flt-wrap-000 with text ... more or less
     page, = render_pages('''
       <style>
-        @font-face { src: url(weasyprint.otf); font-family: weasyprint }
         body { width: 100px; font: 60px weasyprint; }
         p { float: left; height: 100px }
         img { width: 60px; vertical-align: top }
@@ -307,9 +307,6 @@ def test_floats_page_breaks_3():
 def test_preferred_widths_1():
     def get_float_width(body_width):
         page, = render_pages('''
-          <style>
-            @font-face { src: url(weasyprint.otf); font-family: weasyprint }
-          </style>
           <body style="width: %spx; font-family: weasyprint">
           <p style="white-space: pre-line; float: left">
             Lorem ipsum dolor sit amet,
@@ -360,7 +357,6 @@ def test_preferred_widths_3():
 def test_preferred_widths_4():
     page, = render_pages(
         '<style>'
-        '  @font-face { src: url(weasyprint.otf); font-family: weasyprint }'
         '  p { font: 20px weasyprint }'
         '</style>'
         '<p style="float: left">XX<br>XX<br>X</p>')
@@ -375,7 +371,6 @@ def test_preferred_widths_5():
     # The space is the start of the line is collapsed.
     page, = render_pages(
         '<style>'
-        '  @font-face { src: url(weasyprint.otf); font-family: weasyprint }'
         '  p { font: 20px weasyprint }'
         '</style>'
         '<p style="float: left">XX<br> XX<br>X</p>')
@@ -389,7 +384,6 @@ def test_preferred_widths_5():
 def test_float_in_inline_1():
     page, = render_pages('''
       <style>
-        @font-face { src: url(weasyprint.otf); font-family: weasyprint }
         body {
           font-family: weasyprint;
           font-size: 20px;
@@ -434,7 +428,6 @@ def test_float_in_inline_1():
 def test_float_in_inline_2():
     page, = render_pages('''
       <style>
-        @font-face { src: url(weasyprint.otf); font-family: weasyprint }
         @page {
           size: 10em;
         }
@@ -470,7 +463,6 @@ def test_float_in_inline_2():
 def test_float_in_inline_3():
     page, = render_pages('''
       <style>
-        @font-face { src: url(weasyprint.otf); font-family: weasyprint }
         @page {
           size: 10em;
         }
@@ -505,7 +497,6 @@ def test_float_in_inline_3():
 def test_float_in_inline_4():
     page, = render_pages('''
       <style>
-        @font-face { src: url(weasyprint.otf); font-family: weasyprint }
         @page {
           size: 10em;
         }
@@ -542,7 +533,6 @@ def test_float_in_inline_4():
 def test_float_next_line():
     page, = render_pages('''
       <style>
-        @font-face { src: url(weasyprint.otf); font-family: weasyprint }
         body {
           font-family: weasyprint;
           font-size: 20px;
@@ -575,7 +565,6 @@ def test_float_next_line():
 def test_float_text_indent_1():
     page, = render_pages('''
       <style>
-        @font-face { src: url(weasyprint.otf); font-family: weasyprint }
         body {
           font-family: weasyprint;
           font-size: 20px;
@@ -610,7 +599,6 @@ def test_float_text_indent_1():
 def test_float_text_indent_2():
     page, = render_pages('''
       <style>
-        @font-face { src: url(weasyprint.otf); font-family: weasyprint }
         body {
           font-family: weasyprint;
           font-size: 20px;
@@ -652,7 +640,6 @@ def test_float_text_indent_2():
 def test_float_text_indent_3():
     page, = render_pages('''
       <style>
-        @font-face { src: url(weasyprint.otf); font-family: weasyprint }
         body {
           font-family: weasyprint;
           font-size: 20px;
@@ -699,7 +686,6 @@ def test_float_text_indent_3():
 def test_float_previous_break():
     page1, page2 = render_pages('''
       <style>
-        @font-face { src: url(weasyprint.otf); font-family: weasyprint }
         @page {
           size: 13px;
         }
@@ -746,7 +732,6 @@ def test_float_previous_break():
 def test_float_fail():
     page, = render_pages('''
       <style>
-        @font-face { src: url(weasyprint.otf); font-family: weasyprint }
         body {
           font-family: weasyprint;
           font-size: 20px;
@@ -768,3 +753,48 @@ def test_float_fail():
     body, = html.children
     paragraph, = body.children
     line1, line2, line3 = paragraph.children
+
+
+def test_float_table_aborted_row():
+    page1, page2 = render_pages('''
+      <style>
+        @page {size: 10px 7px}
+        body {font-family: weasyprint; font-size: 2px; line-height: 1}
+        div {float: right; orphans: 1}
+        td {break-inside: avoid}
+      </style>
+      <table><tbody>
+        <tr><td>abc</td></tr>
+        <tr><td>abc</td></tr>
+        <tr><td>def <div>f<br>g</div> ghi</td></tr>
+      </tbody></table>
+    ''')
+
+    html, = page1.children
+    body, = html.children
+    table_wrapper, = body.children
+    table, = table_wrapper.children
+    tbody, = table.children
+    for tr in tbody.children:
+        td, = tr.children
+        line, = td.children
+        textbox, = line.children
+        assert textbox.text == 'abc'
+
+    html, = page2.children
+    body, = html.children
+    table_wrapper, = body.children
+    table, = table_wrapper.children
+    tbody, = table.children
+    tr, = tbody.children
+    td, = tr.children
+    line1, line2 = td.children
+    textbox, div = line1.children
+    assert textbox.text == 'def '
+    textbox, = line2.children
+    assert textbox.text == 'ghi'
+    line1, line2 = div.children
+    textbox, br = line1.children
+    assert textbox.text == 'f'
+    textbox, = line2.children
+    assert textbox.text == 'g'

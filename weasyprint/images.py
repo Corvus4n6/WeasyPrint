@@ -74,6 +74,12 @@ class RasterImage:
         self.ratio = (self.width / self.height) if self.height != 0 else inf
         self.optimize = optimize = options['optimize_images']
 
+        # The presence of the APP14 segment indicates an Adobe image with
+        # inverted CMYK data. Specify a Decode Array to invert it again back to
+        # normal. See https://github.com/Kozea/WeasyPrint/pull/2179.
+        app14 = getattr(original_pillow_image, 'app', {}).get('APP14')
+        self.invert_colors = self.mode == 'CMYK' and app14 is not None
+
         if pillow_image.format in ('JPEG', 'MPO'):
             self.format = 'JPEG'
             if image_data is None or optimize or jpeg_quality is not None:
@@ -115,11 +121,11 @@ class RasterImage:
             concrete_width, 0, 0, -concrete_height, 0, concrete_height)
         stream.draw_x_object(image_name)
 
-    def cache_image_data(self, data, filename=None, alpha=False):
+    def cache_image_data(self, data, filename=None, slot='source'):
         if filename:
             return LazyLocalImage(filename)
         else:
-            key = f'{self.id}{int(alpha)}{self._dpi or ""}'
+            key = f'{self.id}-{slot}-{self._dpi or ""}'
             return LazyImage(self._cache, key, data)
 
     def get_x_object(self, interpolate, dpi_ratio):
@@ -157,6 +163,8 @@ class RasterImage:
         })
 
         if self.format == 'JPEG':
+            if self.invert_colors:
+                extra['Decode'] = pydyf.Array((1, 0) * 4)
             extra['Filter'] = '/DCTDecode'
             return pydyf.Stream([self.image_data], extra)
 
@@ -182,7 +190,7 @@ class RasterImage:
             png_data = self._get_png_data(pillow_image)
             # Save alpha channel as mask
             alpha_data = self._get_png_data(alpha)
-            stream = self.cache_image_data(alpha_data, alpha=True)
+            stream = self.cache_image_data(alpha_data, slot='streamalpha')
             extra['SMask'] = pydyf.Stream([stream], extra={
                 'Filter': '/FlateDecode',
                 'Type': '/XObject',
@@ -201,7 +209,7 @@ class RasterImage:
             png_data = self._get_png_data(
                 Image.open(io.BytesIO(self.image_data.data)))
 
-        return pydyf.Stream([self.cache_image_data(png_data)], extra)
+        return pydyf.Stream([self.cache_image_data(png_data, slot='stream')], extra)
 
     @staticmethod
     def _get_png_data(pillow_image):
@@ -283,9 +291,13 @@ class SVGImage:
         return width, height, ratio
 
     def draw(self, stream, concrete_width, concrete_height, image_rendering):
-        self._svg.draw(
-            stream, concrete_width, concrete_height, self._base_url,
-            self._url_fetcher, self._context)
+        try:
+            self._svg.draw(
+                stream, concrete_width, concrete_height, self._base_url,
+                self._url_fetcher, self._context)
+        except BaseException as exception:
+            LOGGER.error('Failed to render SVG image %s', self._base_url)
+            LOGGER.debug('Error while rendering SVG image:', exc_info=exception)
 
 
 def get_image_from_uri(cache, url_fetcher, options, url, forced_mime_type=None,
@@ -355,13 +367,14 @@ def get_image_from_uri(cache, url_fetcher, options, url, forced_mime_type=None,
                     raise ImageLoadingError.from_exception(raster_exception)
             else:
                 # Store image id to enable cache in Stream.add_image
-                image_id = md5(url.encode()).hexdigest()
+                image_id = md5(url.encode(), usedforsecurity=False).hexdigest()
                 image = RasterImage(
                     pillow_image, image_id, string, filename, cache,
                     orientation, options)
 
     except (URLFetchingError, ImageLoadingError) as exception:
         LOGGER.error('Failed to load image at %r: %s', url, exception)
+        LOGGER.debug('Error while loading image:', exc_info=exception)
         image = None
 
     cache[url] = image
@@ -560,7 +573,7 @@ class Gradient:
             alpha_stream.transform(d=scale_y)
             alpha_stream.stream = [f'/{alpha_shading.id} sh']
 
-        stream.shading(shading.id)
+        stream.paint_shading(shading.id)
 
     def layout(self, width, height):
         """Get layout information about the gradient.
@@ -648,9 +661,9 @@ class LinearGradient(Gradient):
                 for i in range(len(positions) - 1)]
 
             # Create cycles used to add colors
-            next_steps = cycle([0] + position_steps)
+            next_steps = cycle((0, *position_steps))
             next_colors = cycle(colors)
-            previous_steps = cycle([0] + position_steps[::-1])
+            previous_steps = cycle((0, *position_steps[::-1]))
             previous_colors = cycle(colors[::-1])
 
             # Add colors after last step
@@ -849,8 +862,7 @@ class RadialGradient(Gradient):
                 new_positions = [
                     position - 1 - full_repeat for position
                     in original_positions[-(i - 1):]]
-                positions = (
-                    [ratio - 1 - full_repeat] + new_positions + positions)
+                positions = (ratio - 1 - full_repeat, *new_positions, *positions)
                 return points, positions, colors
 
     def _resolve_size(self, width, height, center_x, center_y):

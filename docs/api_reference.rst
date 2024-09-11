@@ -154,8 +154,9 @@ can contain hyperlinks, bookmarks and attachments.
 Hyperlinks will be clickable in PDF viewers that support them. They can
 be either internal, to another part of the same document (eg.
 ``<a href="#pdf">``) or external, to an URL. External links are resolved
-to absolute URLs: ``<a href="/samples/">`` on the WeasyPrint website would always
-point to https://weasyprint.org/samples/ in PDF files.
+to absolute URLs: ``<a href="/blog-articles/">`` on the CourtBouillon website
+would always point to https://www.courtbouillon.org/blog-articles/ in PDF
+files.
 
 PDF bookmarks are also called outlines and are generally shown in a
 sidebar. Clicking on an entry scrolls the matching part of the document
@@ -168,12 +169,12 @@ or through regular links with ``<a rel=attachment>`` to attach a resource that
 can be saved by clicking on said link. The ``title`` attribute can be used as
 description of the attachment.
 
-The generation of PDF/A documents (A-1b, A-2b, A-3b and A-4b) is supported.
-However, the generated documents are not guaranteed to be valid, and users have
-the responsibility to check that they follow the rules listed by the related
-specifications. The major rules to follow are to include a PDF identifier, to
-check the PDF version, and to avoid anti-aliasing for images using
-``image-rendering: crisp-edges``.
+The generation of PDF/A documents (A-1b, A-2b, A-3b, A-4b, A-2u, A-3u and A-4u) is
+supported. However, the generated documents are not guaranteed to be valid, and users
+have the responsibility to check that they follow the rules listed by the related
+specifications. The major rules to follow are to include a PDF identifier, to check the
+PDF version, and to avoid anti-aliasing for images using ``image-rendering:
+crisp-edges``.
 
 The generation of PDF/UA documents (UA-1) is supported. However, the generated
 documents are not guaranteed to be valid, and users have the responsibility to
@@ -483,10 +484,17 @@ and do not wish to include it in the bookmarks, add this in your stylesheet:
 
     h1 { bookmark-level: none }
 
+`Leaders`_ are also supported:
+
+.. code-block:: css
+
+    li a::after {
+        content: ' ' leader(dotted) ' ' target-counter(attr(href), page);
+    }
+
 The other features of this module are **not** implemented:
 
 - quotes (``content: *-quote``);
-- leaders (``content: leader()``).
 
 .. _CSS Generated Content Module Level 3: https://www.w3.org/TR/css-content-3/
 .. _Quotes: https://www.w3.org/TR/css-content-3/#quotes
@@ -495,6 +503,7 @@ The other features of this module are **not** implemented:
 .. _an example: https://github.com/Kozea/WeasyPrint/pull/652#issuecomment-403276559
 .. _PDF bookmarks: https://www.w3.org/TR/css-content-3/#bookmark-generation
 .. _user agent stylesheet: https://github.com/Kozea/WeasyPrint/blob/main/weasyprint/css/html5_ua.css
+.. _Leaders: https://www.w3.org/TR/css-content-3/#leaders
 
 CSS Color Module Level 3
 ++++++++++++++++++++++++
@@ -550,10 +559,10 @@ background layers per box), including the ``background``, ``background-color``,
 WeasyPrint also supports the `rounded corners part`_ of this module, including
 the ``border-radius`` property.
 
-WeasyPrint does **not** support the `border images part`_ of this module,
-including the ``border-image``, ``border-image-source``,
-``border-image-slice``, ``border-image-width``, ``border-image-outset`` and
-``border-image-repeat`` properties.
+WeasyPrint also supports the `border images part`_ of this module, including the
+``border-image``, ``border-image-source``, ``border-image-slice``,
+``border-image-width``, ``border-image-outset`` and ``border-image-repeat``
+properties.
 
 WeasyPrint does **not** support the `box shadow part`_ of this module,
 including the ``box-shadow`` property. This feature has been implemented in a
@@ -715,11 +724,9 @@ The `CSS Custom Properties for Cascading Variables Module Level 1`_ "introduces
 cascading variables as a new primitive value type that is accepted by all CSS
 properties, and custom properties for defining them."
 
-The custom properties are supported. The ``var()`` notation is `only supported
-in single-value properties`_.
+The custom properties and the ``var()`` notation are supported.
 
 .. _CSS Custom Properties for Cascading Variables Module Level 1: https://www.w3.org/TR/css-variables/
-.. _only supported in single-value properties: https://github.com/Kozea/WeasyPrint/issues/1219
 
 CSS Text Decoration Module Level 3
 ++++++++++++++++++++++++++++++++++
@@ -750,6 +757,56 @@ All the ``flex-*``, ``align-*``, ``justify-*`` and ``order`` properties are
 supported. The ``flex`` and ``flex-flow`` shorthands are supported too.
 
 .. _CSS Flexible Box Layout Module Level 1: https://www.w3.org/TR/css-flexbox-1/
+
+CSS Grid Layout Module Level 2
+++++++++++++++++++++++++++++++
+
+The `CSS Grid Layout Module Level 2`_ "defines a two-dimensional grid-based layout
+system, optimized for user interface design".
+
+This module works for simple cases, but has some limitations. Here are
+non-exhaustive lists of supported/unsupported features.
+
+Supported:
+
+- ``display: grid``,
+- ``grid-auto-*``, ``grid-template-*`` and other ``grid-*`` properties,
+- ``grid`` and other ``grid-*`` shorthands,
+- flexible lengths (``fr`` unit),
+- line names,
+- grid areas,
+- auto rows and auto columns,
+- ``z-index``,
+- ``repeat(X, *)``,
+- ``minmax()``,
+- ``align-*`` and ``justify-*`` alignment properties,
+- ``gap`` and ``*-gap`` properties for gutters,
+- dense auto flow,
+- ``order``,
+- margins, borders, padding on grid containers and grid items,
+- fragmentation between rows.
+
+Unsupported or untested:
+
+- ``display: inline-grid``,
+- auto content size for grid containers,
+- ``grid-auto-flow: column``,
+- subgrids,
+- ``repeat(auto-fill, *)`` and ``repeat(auto-fit, *)``,
+- auto margins for grid items,
+- ``span`` with line names,
+- ``span`` for flexible tracks,
+- ``safe`` and ``unsafe`` alignments,
+- baseline alignment,
+- grid items with intrinsic size (images),
+- distribute space beyond limits,
+- grid items larger than grid containers,
+- ``min-width``, ``max-width``, ``min-height``, ``max-height`` on grid items,
+- complex ``min-content`` and ``max-content`` cases,
+- absolutely positioned and floating grid items,
+- fragmentation in rows.
+
+.. _CSS Grid Layout Module Level 2: https://www.w3.org/TR/css-grid-2/
 
 CSS Basic User Interface Module Level 3/4
 +++++++++++++++++++++++++++++++++++++++++
